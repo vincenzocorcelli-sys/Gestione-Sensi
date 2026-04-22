@@ -34,9 +34,6 @@ input:focus,select:focus{outline:none;border-color:var(--ac)!important;}
 </head>
 <body>
 
-<!-- ══════════════════════════════════════════════════════
-     CONFIGURAZIONE — modifica solo questa sezione
-     ════════════════════════════════════════════════════ -->
 <script>
 const JSONBIN_KEY = '$2a$10$M0Z5DD3w34pJSTSL24DR2ueuKWmvlgVi4ijNgH8oKA8tuM.8G0qhG';
 const JSONBIN_BIN_ID = '69dfd218856a68218939df74';
@@ -435,7 +432,6 @@ function Panoramica({te,tf,tv,precedente,setPrecedente}){
   );
 }
 
-// ── App principale ────────────────────────────────────────────────
 function App(){
   const [load,sLoad]=useState(true);
   const [err,sErr]=useState('');
@@ -451,9 +447,7 @@ function App(){
 
   useEffect(()=>{
     (async()=>{
-      if(JSONBIN_KEY==='INSERISCI_LA_TUA_MASTER_KEY'){
-        sErr('setup');sLoad(false);return;
-      }
+      if(JSONBIN_KEY==='INSERISCI_LA_TUA_MASTER_KEY'){sErr('setup');sLoad(false);return;}
       const d=await jbLoad();
       if(d)sData({...EMPTY,...d});
       sLoad(false);
@@ -475,42 +469,23 @@ function App(){
     sSyncing(true);
     try{
       const bid=await jbSave(newData);
-      if(bid&&!JSONBIN_BIN_ID&&!localStorage.getItem('sensi_bin_id_confirmed')){
-        sNewBid(bid);
-      }
+      if(bid&&!JSONBIN_BIN_ID&&!localStorage.getItem('sensi_bin_id_confirmed'))sNewBid(bid);
     }catch(e){console.error(e);}
     sSyncing(false);
     sLastSync(new Date());
   },[]);
 
-  // ── FUNZIONE ESPORTA PER CLAUDE ──────────────────────────────
   const esportaPerClaude=()=>{
     const json=JSON.stringify(data,null,2);
     if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(json).then(()=>{
-        sCopied(true);
-        setTimeout(()=>sCopied(false),2500);
-      }).catch(()=>apriFinestraJson(json));
-    }else{
-      apriFinestraJson(json);
-    }
+      navigator.clipboard.writeText(json).then(()=>{sCopied(true);setTimeout(()=>sCopied(false),2500);}).catch(()=>apriFinestraJson(json));
+    }else{apriFinestraJson(json);}
   };
 
   const apriFinestraJson=(json)=>{
     const w=window.open('','_blank','width=680,height=560');
-    w.document.write(`<!DOCTYPE html><html><head><title>Dati SENSI per Claude</title>
-    <style>body{margin:0;background:#111;color:#f0ebe0;font-family:monospace;}
-    .hdr{padding:12px 16px;background:#1c1c1c;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;}
-    h3{margin:0;font-size:13px;color:#EF9F27;}
-    button{background:#EF9F27;color:#111;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;}
-    textarea{width:100%;height:calc(100vh - 50px);background:#111;color:#f0ebe0;border:none;padding:16px;font-size:11px;line-height:1.6;resize:none;}
-    </style></head><body>
-    <div class="hdr"><h3>📋 Dati SENSI — copia e incolla nella chat con Claude</h3>
-    <button onclick="navigator.clipboard.writeText(document.querySelector('textarea').value).then(()=>{this.textContent='✓ Copiato!'})">Copia tutto</button></div>
-    <textarea readonly>${json.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
-    </body></html>`);
+    w.document.write(`<!DOCTYPE html><html><head><title>Dati SENSI per Claude</title><style>body{margin:0;background:#111;color:#f0ebe0;font-family:monospace;}.hdr{padding:12px 16px;background:#1c1c1c;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;}h3{margin:0;font-size:13px;color:#EF9F27;}button{background:#EF9F27;color:#111;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;}textarea{width:100%;height:calc(100vh - 50px);background:#111;color:#f0ebe0;border:none;padding:16px;font-size:11px;line-height:1.6;resize:none;}</style></head><body><div class="hdr"><h3>📋 Dati SENSI — copia e incolla nella chat con Claude</h3><button onclick="navigator.clipboard.writeText(document.querySelector('textarea').value).then(()=>{this.textContent='✓ Copiato!'})">Copia tutto</button></div><textarea readonly>${json.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea></body></html>`);
   };
-  // ────────────────────────────────────────────────────────────
 
   const setEntrate=v=>{const nd={...data,entrate:v};sData(nd);save(nd);};
   const setFisse=v=>{const nd={...data,fisse:v};sData(nd);save(nd);};
@@ -526,25 +501,9 @@ function App(){
   const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'}];
   const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,precedente:data.precedente,setPrecedente,te,tf,tv};
 
-  if(err==='setup'){
-    return h('div',{style:{maxWidth:'560px',margin:'80px auto',padding:'0 20px'}},
-      h('div',{style:{...card,padding:'32px'}},
-        h('div',{style:{fontFamily:'var(--pf)',fontSize:'24px',fontWeight:'500',color:'var(--ac)',marginBottom:'8px'}},'Sensi'),
-        h('div',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:'24px'}},'configurazione iniziale'),
-        h('p',{style:{fontSize:'13px',color:'var(--txt2)',lineHeight:'1.7',marginBottom:'20px'}},'Per attivare il salvataggio condiviso, serve una chiave API gratuita di JSONBin.'),
-        h('ol',{style:{fontSize:'13px',color:'var(--txt2)',lineHeight:'2',paddingLeft:'18px',marginBottom:'20px'}},
-          h('li',null,'Crea un account gratuito su ',h('a',{href:'https://jsonbin.io',target:'_blank',style:{color:'var(--ac)'}},'jsonbin.io')),
-          h('li',null,'Vai su ',h('b',null,'API Keys'),' → copia la ',h('b',null,'Master Key')),
-          h('li',null,'Apri il file HTML e incolla la chiave in ',h('code',{style:{background:'var(--surf2)',padding:'1px 5px',borderRadius:'4px',fontSize:'12px'}},"JSONBIN_KEY = '...'")),
-          h('li',null,'Salva e riapri il file')
-        )
-      )
-    );
-  }
+  if(err==='setup') return h('div',{style:{maxWidth:'560px',margin:'80px auto',padding:'0 20px'}},h('div',{style:{...card,padding:'32px'}},h('div',{style:{fontFamily:'var(--pf)',fontSize:'24px',color:'var(--ac)',marginBottom:'24px'}},'Setup JSONBin'),h('p',{style:{fontSize:'13px',color:'var(--txt2)'}},'Inserisci la Master Key di JSONBin nel file HTML.')));
 
-  if(load){
-    return h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',fontFamily:'var(--mono)',fontSize:'13px',color:'var(--txt3)'}},'Caricamento…');
-  }
+  if(load) return h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',fontFamily:'var(--mono)',fontSize:'13px',color:'var(--txt3)'}},'Caricamento…');
 
   return h('div',null,
     h('div',{style:{background:'var(--surf)',borderBottom:'0.5px solid var(--border)',position:'sticky',top:0,zIndex:100}},
@@ -558,22 +517,7 @@ function App(){
             syncing&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'Salvataggio…'),
             !syncing&&lastSync&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},`Sync ${lastSync.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`),
             h('button',{onClick:()=>jbLoad().then(d=>{if(d)sData({...EMPTY,...d});sLastSync(new Date());}),style:{background:'none',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt2)',cursor:'pointer'}},'🔄 Aggiorna'),
-            // ── PULSANTE ESPORTA PER CLAUDE ──
-            h('button',{
-              onClick:esportaPerClaude,
-              style:{
-                background:copied?'rgba(15,110,86,0.15)':'none',
-                border:`0.5px solid ${copied?'var(--pos)':'var(--ac)'}`,
-                borderRadius:'var(--rad)',
-                padding:'4px 10px',
-                fontFamily:'var(--mono)',
-                fontSize:'11px',
-                color:copied?'var(--pos)':'var(--ac)',
-                cursor:'pointer',
-                fontWeight:'500',
-                transition:'all 0.2s'
-              }
-            },copied?'✓ Copiato!':'📋 per Claude')
+            h('button',{onClick:esportaPerClaude,style:{background:copied?'rgba(15,110,86,0.15)':'none',border:`0.5px solid ${copied?'var(--pos)':'var(--ac)'}`,borderRadius:'var(--rad)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:'11px',color:copied?'var(--pos)':'var(--ac)',cursor:'pointer',fontWeight:'500',transition:'all 0.2s'}},copied?'✓ Copiato!':'📋 per Claude')
           )
         ),
         h('div',{style:{display:'flex',gap:'2px',overflowX:'auto',marginBottom:'-0.5px'}},
@@ -581,13 +525,10 @@ function App(){
         )
       )
     ),
-
     newBinId&&h('div',{style:{background:'rgba(186,117,23,0.1)',borderBottom:'1px solid var(--ac)',padding:'10px 20px',fontFamily:'var(--mono)',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}},
-      h('span',null,'✓ Bin creato con successo! ID: ',h('strong',null,newBinId)),
-      h('span',{style:{color:'var(--txt2)'}},'— Inserisci questo ID nel file HTML (riga JSONBIN_BIN_ID) e rideploya.'),
+      h('span',null,'✓ Bin creato! ID: ',h('strong',null,newBinId)),
       h('button',{onClick:()=>{localStorage.setItem('sensi_bin_id_confirmed','1');sNewBid('');},style:{background:'none',border:'none',cursor:'pointer',color:'var(--txt3)',fontSize:'16px'}},'×')
     ),
-
     tab==='dashboard'&&h(Dashboard,sh),
     tab==='entrate'&&h(Entrate,sh),
     tab==='fisse'&&h(SpeseFisse,sh),
