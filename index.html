@@ -38,14 +38,8 @@ input:focus,select:focus{outline:none;border-color:var(--ac)!important;}
      CONFIGURAZIONE — modifica solo questa sezione
      ════════════════════════════════════════════════════ -->
 <script>
-// 1. Crea un account gratuito su https://jsonbin.io
-// 2. Vai su "API Keys" → copia la Master Key → incollala qui:
 const JSONBIN_KEY = '$2a$10$M0Z5DD3w34pJSTSL24DR2ueuKWmvlgVi4ijNgH8oKA8tuM.8G0qhG';
-
-// 3. Prima volta: lascia BIN_ID vuoto. L'app crea il bin
-//    e ti mostra l'ID. Poi inseriscilo qui e rideploya.
 const JSONBIN_BIN_ID = '69dfd218856a68218939df74';
-// ══════════════════════════════════════════════════════ */
 </script>
 
 <div id="root"></div>
@@ -57,7 +51,6 @@ const JSONBIN_BIN_ID = '69dfd218856a68218939df74';
 const {createElement:h,useState,useEffect,useCallback,Fragment}=React;
 const {createRoot}=ReactDOM;
 
-// ── Costanti ─────────────────────────────────────────────────────
 const MESI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
@@ -66,13 +59,11 @@ const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Softwa
 const EMPTY={entrate:[],fisse:{},variabili:[],debiti:[],precedente:{}};
 const JB='https://api.jsonbin.io/v3/b';
 
-// ── Helpers generici ─────────────────────────────────────────────
 const euro=n=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(n||0);
 const uid=()=>Math.random().toString(36).slice(2,9);
 const tod=()=>new Date().toISOString().slice(0,10);
 const gm=d=>new Date(d).getMonth()+1;
 
-// ── JSONBin storage ──────────────────────────────────────────────
 function getBinId(){return JSONBIN_BIN_ID||localStorage.getItem('sensi_bin_id')||'';}
 
 async function jbLoad(){
@@ -88,7 +79,6 @@ async function jbLoad(){
 async function jbSave(data){
   let bid=getBinId();
   if(!bid){
-    // Crea nuovo bin
     const r=await fetch(JB,{method:'POST',headers:{'X-Master-Key':JSONBIN_KEY,'Content-Type':'application/json','X-Bin-Name':'sensi-2026','X-Bin-Private':'true'},body:JSON.stringify(data)});
     if(!r.ok)throw new Error('Errore creazione bin');
     const res=await r.json();
@@ -101,12 +91,10 @@ async function jbSave(data){
   }
 }
 
-// ── Stili riutilizzabili ─────────────────────────────────────────
 const card={background:'var(--surf)',border:'0.5px solid var(--border)',borderRadius:'var(--radlg)',overflow:'hidden'};
 const IS={background:'var(--surf2)',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',padding:'7px 10px',fontFamily:'var(--mono)',fontSize:'13px',color:'var(--txt)',width:'100%'};
 const HS={fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em',textTransform:'uppercase'};
 
-// ── Componenti base ───────────────────────────────────────────────
 function GB({onClick,primary,children,st={}}){
   return h('button',{onClick,style:{border:primary?'none':'0.5px solid var(--border2)',borderRadius:'var(--rad)',padding:'7px 14px',fontFamily:'var(--mono)',fontSize:'13px',background:primary?'var(--ac)':'var(--surf2)',color:primary?'#fff':'var(--ac)',cursor:'pointer',transition:'opacity 0.15s',...st}},children);
 }
@@ -153,7 +141,6 @@ function PgHdr({title,right}){
   );
 }
 
-// ── Dashboard ────────────────────────────────────────────────────
 function Dashboard({mese,setMese,te,tf,tv,debiti}){
   const ent=te(mese),fis=tf(mese),vari=tv(mese),usc=fis+vari,saldo=ent-usc;
   const dr=debiti.reduce((s,d)=>s+d.residuo,0);
@@ -171,7 +158,6 @@ function Dashboard({mese,setMese,te,tf,tv,debiti}){
   );
 }
 
-// ── Entrate ──────────────────────────────────────────────────────
 function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
   const [f,sf]=useState({data:tod(),importo:'',nota:''});
   const [totInput,sTotInput]=useState('');
@@ -219,7 +205,6 @@ function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
   ));
 }
 
-// ── Spese Fisse ──────────────────────────────────────────────
 function SpeseFisse({mese,setMese,fisse,setFisse}){
   const k=String(mese);
   const [nn,snn]=useState('');
@@ -256,17 +241,14 @@ function SpeseFisse({mese,setMese,fisse,setFisse}){
         const ac=accTot(v),rv=res(v),io=open===v.id,saldato=rv===0&&v.importo>0;
         return h(Fragment,{key:v.id},
           h('div',{style:{padding:'12px 16px',borderBottom:'0.5px solid var(--border)'}},
-            // Riga 1: nome + pulsante elimina
             h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
               h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)'}},v.nome),
               h('button',{onClick:()=>upd(c=>c.filter(x=>x.id!==v.id)),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'18px',padding:0,cursor:'pointer',lineHeight:1}},'×')
             ),
-            // Riga 2: importo + stato allineato a destra
             h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}},
               h('input',{type:'number',value:v.importo||'',placeholder:'Importo €',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,importo:parseFloat(e.target.value)||0}:x)),style:{...IS,flex:1,padding:'7px 10px',fontSize:'14px'}}),
               h('button',{onClick:()=>upd(c=>c.map(x=>x.id===v.id?{...x,pagato:!x.pagato}:x)),style:btnSt(saldato,v.pagato)},saldato||v.pagato?'✓ Pagato':'⏳ Aperto')
             ),
-            // Riga 3: acconto + residuo
             v.importo>0&&h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
               h('div',{style:{flex:1,display:'flex',gap:'6px',alignItems:'center'}},
                 h('span',{style:{...HS,fontSize:'10px'}},'Acconto:'),
@@ -315,7 +297,6 @@ function SpeseFisse({mese,setMese,fisse,setFisse}){
   );
 }
 
-// ── Spese Variabili ──────────────────────────────────────────────
 function SpeseVariabili({mese,setMese,variabili,setVariabili}){
   const [f,sf]=useState({data:tod(),cat:CATS[0],importo:'',nota:''});
   const rows=variabili.filter(v=>gm(v.data)===mese).sort((a,b)=>b.data.localeCompare(a.data));
@@ -349,7 +330,6 @@ function SpeseVariabili({mese,setMese,variabili,setVariabili}){
   );
 }
 
-// ── Debiti ───────────────────────────────────────────────────────
 function Debiti({debiti,setDebiti}){
   const [f,sf]=useState({cred:'',tot:'',note:''});
   const [open,sOpen]=useState(null);
@@ -413,7 +393,6 @@ function Debiti({debiti,setDebiti}){
   );
 }
 
-// ── Panoramica ───────────────────────────────────────────────────
 function Panoramica({te,tf,tv,precedente,setPrecedente}){
   const [edit,sEdit]=useState(false);
   const [tmp,sTmp]=useState({});
@@ -463,13 +442,13 @@ function App(){
   const [newBinId,sNewBid]=useState('');
   const [syncing,sSyncing]=useState(false);
   const [lastSync,sLastSync]=useState(null);
+  const [copied,sCopied]=useState(false);
 
   const [data,sData]=useState(EMPTY);
   const cm=new Date().getMonth()+1;
   const [mese,sMese]=useState(cm>=1&&cm<=12?cm:1);
   const [tab,sTab]=useState('dashboard');
 
-  // Carica dati all'avvio
   useEffect(()=>{
     (async()=>{
       if(JSONBIN_KEY==='INSERISCI_LA_TUA_MASTER_KEY'){
@@ -482,7 +461,6 @@ function App(){
     })();
   },[]);
 
-  // Ricarica quando la tab torna in focus
   useEffect(()=>{
     const onVisible=()=>{
       if(!document.hidden&&JSONBIN_KEY!=='INSERISCI_LA_TUA_MASTER_KEY'){
@@ -493,7 +471,6 @@ function App(){
     return()=>document.removeEventListener('visibilitychange',onVisible);
   },[]);
 
-  // Salva dati aggiornando tutto il record
   const save=useCallback(async(newData)=>{
     sSyncing(true);
     try{
@@ -506,7 +483,35 @@ function App(){
     sLastSync(new Date());
   },[]);
 
-  // Setter che aggiornano lo state e salvano
+  // ── FUNZIONE ESPORTA PER CLAUDE ──────────────────────────────
+  const esportaPerClaude=()=>{
+    const json=JSON.stringify(data,null,2);
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(json).then(()=>{
+        sCopied(true);
+        setTimeout(()=>sCopied(false),2500);
+      }).catch(()=>apriFinestraJson(json));
+    }else{
+      apriFinestraJson(json);
+    }
+  };
+
+  const apriFinestraJson=(json)=>{
+    const w=window.open('','_blank','width=680,height=560');
+    w.document.write(`<!DOCTYPE html><html><head><title>Dati SENSI per Claude</title>
+    <style>body{margin:0;background:#111;color:#f0ebe0;font-family:monospace;}
+    .hdr{padding:12px 16px;background:#1c1c1c;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;}
+    h3{margin:0;font-size:13px;color:#EF9F27;}
+    button{background:#EF9F27;color:#111;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;}
+    textarea{width:100%;height:calc(100vh - 50px);background:#111;color:#f0ebe0;border:none;padding:16px;font-size:11px;line-height:1.6;resize:none;}
+    </style></head><body>
+    <div class="hdr"><h3>📋 Dati SENSI — copia e incolla nella chat con Claude</h3>
+    <button onclick="navigator.clipboard.writeText(document.querySelector('textarea').value).then(()=>{this.textContent='✓ Copiato!'})">Copia tutto</button></div>
+    <textarea readonly>${json.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea>
+    </body></html>`);
+  };
+  // ────────────────────────────────────────────────────────────
+
   const setEntrate=v=>{const nd={...data,entrate:v};sData(nd);save(nd);};
   const setFisse=v=>{const nd={...data,fisse:v};sData(nd);save(nd);};
   const setVariabili=v=>{const nd={...data,variabili:v};sData(nd);save(nd);};
@@ -521,13 +526,12 @@ function App(){
   const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'}];
   const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,precedente:data.precedente,setPrecedente,te,tf,tv};
 
-  // Schermata di setup
   if(err==='setup'){
     return h('div',{style:{maxWidth:'560px',margin:'80px auto',padding:'0 20px'}},
       h('div',{style:{...card,padding:'32px'}},
         h('div',{style:{fontFamily:'var(--pf)',fontSize:'24px',fontWeight:'500',color:'var(--ac)',marginBottom:'8px'}},'Sensi'),
         h('div',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:'24px'}},'configurazione iniziale'),
-        h('p',{style:{fontSize:'13px',color:'var(--txt2)',lineHeight:'1.7',marginBottom:'20px'}},'Per attivare il salvataggio condiviso con Livia, serve una chiave API gratuita di JSONBin.'),
+        h('p',{style:{fontSize:'13px',color:'var(--txt2)',lineHeight:'1.7',marginBottom:'20px'}},'Per attivare il salvataggio condiviso, serve una chiave API gratuita di JSONBin.'),
         h('ol',{style:{fontSize:'13px',color:'var(--txt2)',lineHeight:'2',paddingLeft:'18px',marginBottom:'20px'}},
           h('li',null,'Crea un account gratuito su ',h('a',{href:'https://jsonbin.io',target:'_blank',style:{color:'var(--ac)'}},'jsonbin.io')),
           h('li',null,'Vai su ',h('b',null,'API Keys'),' → copia la ',h('b',null,'Master Key')),
@@ -543,7 +547,6 @@ function App(){
   }
 
   return h('div',null,
-    // Header
     h('div',{style:{background:'var(--surf)',borderBottom:'0.5px solid var(--border)',position:'sticky',top:0,zIndex:100}},
       h('div',{style:{maxWidth:'940px',margin:'0 auto',padding:'0 20px'}},
         h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0 10px'}},
@@ -551,10 +554,26 @@ function App(){
             h('span',{style:{fontFamily:'var(--pf)',fontSize:'20px',fontWeight:'500',color:'var(--ac)'}},'Sensi'),
             h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em'}},`gestione economica ${ANNO}`)
           ),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
             syncing&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'Salvataggio…'),
             !syncing&&lastSync&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},`Sync ${lastSync.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`),
-            h('button',{onClick:()=>jbLoad().then(d=>{if(d)sData({...EMPTY,...d});sLastSync(new Date());}),style:{background:'none',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt2)',cursor:'pointer'}},'🔄 Aggiorna')
+            h('button',{onClick:()=>jbLoad().then(d=>{if(d)sData({...EMPTY,...d});sLastSync(new Date());}),style:{background:'none',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt2)',cursor:'pointer'}},'🔄 Aggiorna'),
+            // ── PULSANTE ESPORTA PER CLAUDE ──
+            h('button',{
+              onClick:esportaPerClaude,
+              style:{
+                background:copied?'rgba(15,110,86,0.15)':'none',
+                border:`0.5px solid ${copied?'var(--pos)':'var(--ac)'}`,
+                borderRadius:'var(--rad)',
+                padding:'4px 10px',
+                fontFamily:'var(--mono)',
+                fontSize:'11px',
+                color:copied?'var(--pos)':'var(--ac)',
+                cursor:'pointer',
+                fontWeight:'500',
+                transition:'all 0.2s'
+              }
+            },copied?'✓ Copiato!':'📋 per Claude')
           )
         ),
         h('div',{style:{display:'flex',gap:'2px',overflowX:'auto',marginBottom:'-0.5px'}},
@@ -563,18 +582,15 @@ function App(){
       )
     ),
 
-    // Banner bin ID (prima volta)
     newBinId&&h('div',{style:{background:'rgba(186,117,23,0.1)',borderBottom:'1px solid var(--ac)',padding:'10px 20px',fontFamily:'var(--mono)',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}},
       h('span',null,'✓ Bin creato con successo! ID: ',h('strong',null,newBinId)),
-      h('span',{style:{color:'var(--txt2)'}},'— Inserisci questo ID nel file HTML (riga JSONBIN_BIN_ID) e rideploya per usare la stessa cartella con Livia.'),
+      h('span',{style:{color:'var(--txt2)'}},'— Inserisci questo ID nel file HTML (riga JSONBIN_BIN_ID) e rideploya.'),
       h('button',{onClick:()=>{localStorage.setItem('sensi_bin_id_confirmed','1');sNewBid('');},style:{background:'none',border:'none',cursor:'pointer',color:'var(--txt3)',fontSize:'16px'}},'×')
     ),
 
-    // Contenuto
     tab==='dashboard'&&h(Dashboard,sh),
     tab==='entrate'&&h(Entrate,sh),
     tab==='fisse'&&h(SpeseFisse,sh),
-    
     tab==='debiti'&&h(Debiti,sh),
     tab==='panoramica'&&h(Panoramica,sh)
   );
