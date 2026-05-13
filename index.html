@@ -63,6 +63,18 @@ const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
+
+const MACRO=['Costo personale','Food cost','Affitto e utenze','Spese fisse','Spese variabili'];
+const MACRO_C={'Costo personale':'#0F6E56','Food cost':'#BA7517','Affitto e utenze':'#534AB7','Spese fisse':'#5F5E5A','Spese variabili':'#993C1D'};
+function autoMacro(nome){
+  const n=nome.toLowerCase();
+  if(/stipendio|personale|collaborator|straordinar|tfr|pamela/.test(n))return 'Costo personale';
+  if(/materie|food|f&b|fornitor|bevand|cucina|pasti/.test(n))return 'Food cost';
+  if(/affitto|utenz|acquedotto|gas|luce|acqua|minerva|adriana/.test(n))return 'Affitto e utenze';
+  if(/commercialista|software|abbonament|consulen|contabil/.test(n))return 'Spese fisse';
+  return 'Spese variabili';
+}
+
 const EMPTY={entrate:[],fisse:{},variabili:[],debiti:[],precedente:{}};
 const JB='https://api.jsonbin.io/v3/b';
 
@@ -230,7 +242,7 @@ function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
 }
 
 // ── Spese Fisse ──────────────────────────────────────────────
-function SpeseFisse({mese,setMese,fisse,setFisse}){
+function SpeseFisse({mese,setMese,fisse,setFisse,debiti,setDebiti}){
   const k=String(mese);
   const [nn,snn]=useState('');
   const [open,sOpen]=useState(null);
@@ -238,8 +250,8 @@ function SpeseFisse({mese,setMese,fisse,setFisse}){
   const mkVoci=()=>{
     if(fisse[k])return fisse[k];
     const prev=[...MN].slice().reverse().find(m=>m<mese&&fisse[String(m)]);
-    if(prev)return fisse[String(prev)].map(v=>({...v,id:uid(),importo:0,acconti:[],pagato:false}));
-    return FN.map(n=>({id:uid(),nome:n,importo:0,acconti:[],pagato:false}));
+    if(prev)return fisse[String(prev)].map(v=>({...v,id:uid(),importo:0,acconti:[],pagato:false,macro:v.macro||autoMacro(v.nome),debitoId:v.debitoId||''}));
+    return FN.map(n=>({id:uid(),nome:n,importo:0,acconti:[],pagato:false,macro:autoMacro(n),debitoId:''}));
   };
   const upd=fn=>{const cur=mkVoci();setFisse({...fisse,[k]:fn(cur)});};
   const norm=v=>({acconti:[],...v});
@@ -279,7 +291,7 @@ function SpeseFisse({mese,setMese,fisse,setFisse}){
             // Riga 2: importo + stato allineato a destra
             h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}},
               h('input',{type:'number',value:v.importo||'',placeholder:'Importo €',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,importo:parseFloat(e.target.value)||0}:x)),style:{...IS,flex:1,padding:'7px 10px',fontSize:'14px'}}),
-              h('button',{onClick:()=>upd(c=>c.map(x=>x.id===v.id?{...x,pagato:!x.pagato}:x)),style:btnSt(saldato,v.pagato)},saldato||v.pagato?'✓ Pagato':'⏳ Aperto')
+              h('button',{onClick:()=>{const np=!(v.pagato||saldato);upd(c=>c.map(x=>x.id===v.id?{...x,pagato:np}:x));if(np&&v.debitoId&&v.importo>0){setDebiti(debiti.map(d=>d.id!==v.debitoId?d:{...d,residuo:Math.max(0,d.residuo-v.importo),rate:[...(d.rate||[]),{id:uid(),data:tod(),importo:v.importo,nota:v.nome}]}));}},style:btnSt(saldato,v.pagato)},saldato||v.pagato?'✓ Pagato':'⏳ Aperto')
             ),
             // Riga 3: acconto + residuo
             v.importo>0&&h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
@@ -290,6 +302,15 @@ function SpeseFisse({mese,setMese,fisse,setFisse}){
               h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
                 h('span',{style:{...HS,fontSize:'10px'}},'Residuo:'),
                 h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',color:saldato?'var(--pos)':rv>0?'var(--neg)':'var(--txt3)'}},euro(rv))
+              )
+            ),
+            h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}},
+              h('select',{value:v.macro||'Spese fisse',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,macro:e.target.value}:x)),style:{background:'var(--surf2)',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'3px 6px',fontFamily:'var(--mono)',fontSize:'11px',color:MACRO_C[v.macro||'Spese fisse'],flex:1,minWidth:'140px'}},
+                MACRO.map(m=>h('option',{key:m,value:m},m))
+              ),
+              h('select',{value:v.debitoId||'',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,debitoId:e.target.value}:x)),style:{background:'var(--surf2)',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'3px 6px',fontFamily:'var(--mono)',fontSize:'11px',color:v.debitoId?'var(--neg)':'var(--txt3)',flex:1,minWidth:'120px'}},
+                h('option',{value:''},'Nessun debito'),
+                debiti.map(d=>h('option',{key:d.id,value:d.id},d.cred))
               )
             )
           ),
@@ -318,8 +339,8 @@ function SpeseFisse({mese,setMese,fisse,setFisse}){
         );
       }),
       h('div',{style:{padding:'12px 16px',borderTop:'0.5px solid var(--border)',display:'flex',gap:'8px',alignItems:'center'}},
-        h('input',{placeholder:'Aggiungi voce…',value:nn,onChange:e=>snn(e.target.value),onKeyDown:e=>{if(e.key==='Enter'&&nn.trim()){upd(c=>[...c,{id:uid(),nome:nn.trim(),importo:0,acconti:[],pagato:false}]);snn('');}},style:{...IS}}),
-        h(GB,{onClick:()=>{if(nn.trim()){upd(c=>[...c,{id:uid(),nome:nn.trim(),importo:0,acconti:[],pagato:false}]);snn('');}}},'+ Voce')
+        h('input',{placeholder:'Aggiungi voce…',value:nn,onChange:e=>snn(e.target.value),onKeyDown:e=>{if(e.key==='Enter'&&nn.trim()){upd(c=>[...c,{id:uid(),nome:nn.trim(),importo:0,acconti:[],pagato:false,macro:autoMacro(nn.trim()),debitoId:''}]);snn('');}},style:{...IS}}),
+        h(GB,{onClick:()=>{if(nn.trim()){upd(c=>[...c,{id:uid(),nome:nn.trim(),importo:0,acconti:[],pagato:false,macro:autoMacro(nn.trim()),debitoId:''}]);snn('');}}},'+ Voce')
       ),
       h('div',{style:{padding:'12px 16px',borderTop:'0.5px solid var(--border2)',background:'var(--surf2)',display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:'8px'}},
         h('div',{style:{display:'flex',flexDirection:'column',gap:'2px'}},h('div',{style:HS},'Totale'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--ac)'}},euro(totI))),
@@ -487,6 +508,51 @@ function Panoramica({te,tf,tv,precedente,setPrecedente}){
 }
 
 
+
+// ── Analisi ──────────────────────────────────────────────────────
+function Analisi({mese,setMese,te,tf,fisse,debiti}){
+  const k=String(mese);
+  const voci=(fisse[k]||[]).map(v=>({...v,macro:v.macro||autoMacro(v.nome)}));
+  const ent=te(mese);
+  const byMacro={};
+  MACRO.forEach(m=>{byMacro[m]=0;});
+  voci.forEach(v=>{byMacro[v.macro]=(byMacro[v.macro]||0)+(v.importo||0);});
+  const totSpese=Object.values(byMacro).reduce((s,v)=>s+v,0);
+  const pct=(v)=>ent>0?((v/ent)*100).toFixed(1)+'%':'—';
+  return h(Pg,null,
+    h(PgHdr,{title:'Analisi mese',right:h(MS,{mese,setMese})}),
+    ent===0&&h('div',{style:{...card,padding:'16px',marginBottom:'14px',fontFamily:'var(--mono)',fontSize:'13px',color:'var(--txt3)'}},'Inserisci prima le entrate del mese per vedere le percentuali.'),
+    h('div',{style:{...card,marginBottom:'14px'}},
+      h('div',{style:{padding:'16px 16px 8px',borderBottom:'0.5px solid var(--border)'}},
+        h('div',{style:{...HS,marginBottom:'4px'}},'Incasso mese'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'22px',fontWeight:'500',color:'var(--pos)'}},euro(ent))
+      ),
+      MACRO.map(m=>{
+        const v=byMacro[m]||0;
+        const p=ent>0?(v/ent)*100:0;
+        return h('div',{key:m,style:{padding:'12px 16px',borderBottom:'0.5px solid var(--border)',display:'flex',alignItems:'center',gap:'12px'}},
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:'var(--txt)',marginBottom:'4px'}},m),
+            h('div',{style:{height:'4px',background:'var(--surf2)',borderRadius:'2px',overflow:'hidden'}},
+              h('div',{style:{height:'100%',width:`${Math.min(p,100)}%`,background:MACRO_C[m],transition:'width 0.4s'}})
+            )
+          ),
+          h('div',{style:{textAlign:'right',minWidth:'90px'}},
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:v>0?MACRO_C[m]:'var(--txt3)'}},v>0?euro(v):'—'),
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},v>0?pct(v):'')
+          )
+        );
+      }),
+      h('div',{style:{padding:'12px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--surf2)'}},
+        h('div',{style:HS},'Totale spese'),
+        h('div',{style:{display:'flex',gap:'16px',alignItems:'center'}},
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:'var(--ac)'}},euro(totSpese)),
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt3)'}},ent>0?((totSpese/ent)*100).toFixed(1)+'%':'')
+        )
+      )
+    )
+  );
+}
 function App(){
   const [load,sLoad]=useState(true);
   const [err,sErr]=useState('');
@@ -548,7 +614,7 @@ function App(){
   const tf=m=>(data.fisse[String(m)]||[]).reduce((s,v)=>s+(v.importo||0),0);
   const tv=m=>data.variabili.filter(v=>gm(v.data)===m).reduce((s,v)=>s+v.importo,0);
 
-  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'}];
+  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'}];
   const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,precedente:data.precedente,setPrecedente,te,tf,tv};
 
   // Schermata di setup
@@ -603,10 +669,11 @@ function App(){
     // Contenuto
     tab==='dashboard'&&h(Dashboard,sh),
     tab==='entrate'&&h(Entrate,sh),
-    tab==='fisse'&&h(SpeseFisse,sh),
+    tab==='fisse'&&h(SpeseFisse,{...sh,debiti:data.debiti,setDebiti}),
     
     tab==='debiti'&&h(Debiti,sh),
-    tab==='panoramica'&&h(Panoramica,sh)
+    tab==='panoramica'&&h(Panoramica,sh),
+      tab==='analisi'&&h(Analisi,sh)
   );
 }
 
