@@ -554,6 +554,156 @@ function Analisi({mese,setMese,te,tf,fisse,debiti}){
     )
   );
 }
+// ── Assistente AI (analista integrato) ───────────────────────────
+// Mappa le categorie delle spese variabili sulle macro-categorie
+function mapVarMacro(cat){
+  const c=(cat||'').toLowerCase();
+  if(/materie|f&b|food/.test(c))return 'Food cost';
+  if(/straordinar|lavoro/.test(c))return 'Costo personale';
+  return 'Spese variabili';
+}
+// Ripartizione spese del mese per macro-categoria (fisse + variabili)
+function macroBreakdown(mese,fisse,variabili){
+  const k=String(mese),by={};
+  MACRO.forEach(m=>by[m]=0);
+  (fisse[k]||[]).forEach(v=>{const m=v.macro||autoMacro(v.nome);by[m]=(by[m]||0)+(v.importo||0);});
+  variabili.filter(v=>gm(v.data)===mese).forEach(v=>{const m=mapVarMacro(v.cat);by[m]=(by[m]||0)+(v.importo||0);});
+  return by;
+}
+// Genera punteggio di salute + lista di consigli dai dati reali
+function analizza({mese,te,tf,tv,fisse,variabili,debiti,precedente}){
+  const ins=[];
+  const ent=te(mese);
+  const by=macroBreakdown(mese,fisse,variabili);
+  const usc=tf(mese)+tv(mese);
+  const saldo=ent-usc;
+  const food=by['Food cost'],pers=by['Costo personale'],aff=by['Affitto e utenze'];
+  const prime=food+pers;
+  const P=v=>ent>0?v/ent*100:0;
+  let score=100;
+
+  if(ent===0){
+    ins.push({sev:'info',title:'Mancano le entrate',text:'Inserisci l\'incasso del mese (tab Entrate) per ricevere l\'analisi completa con percentuali, KPI e consigli su misura.'});
+    score=null;
+  }else{
+    // ── Saldo del mese ──
+    if(saldo<0){ins.push({sev:'crit',title:'Mese in perdita',text:`Le uscite (${euro(usc)}) superano gli incassi (${euro(ent)}): perdita di ${euro(-saldo)}. Servono più incassi o un taglio deciso dei costi variabili.`});score-=30;}
+    else if(P(saldo)<5){ins.push({sev:'warn',title:'Margine molto basso',text:`Utile di ${euro(saldo)}, solo il ${P(saldo).toFixed(1)}% degli incassi. Sotto il 5% il margine è fragile: un imprevisto manda il mese in rosso.`});score-=15;}
+    else if(P(saldo)>=10){ins.push({sev:'good',title:'Buona redditività',text:`Utile di ${euro(saldo)}, pari al ${P(saldo).toFixed(1)}% degli incassi. Sopra il 10% è un ottimo risultato per la ristorazione.`});}
+    else{ins.push({sev:'good',title:'Conti in equilibrio',text:`Utile di ${euro(saldo)} (${P(saldo).toFixed(1)}% degli incassi). Margine nella norma, c\'è spazio per migliorare.`});}
+
+    // ── Food cost ──
+    if(food>0){const p=P(food);
+      if(p>36){ins.push({sev:'crit',title:`Food cost alto · ${p.toFixed(1)}%`,text:`Materie prime ${euro(food)}, oltre la soglia del 35%. Rivedi fornitori, porzioni e sprechi. Obiettivo: 30-33%.`});score-=12;}
+      else if(p<22){ins.push({sev:'warn',title:`Food cost basso · ${p.toFixed(1)}%`,text:`Insolitamente basso. Ottimo per il margine, ma verifica di aver registrato tutte le spese di materie prime.`});}
+      else{ins.push({sev:'good',title:`Food cost in linea · ${p.toFixed(1)}%`,text:`Materie prime ${euro(food)}, nella fascia ideale (22-36%).`});}}
+
+    // ── Costo personale ──
+    if(pers>0){const p=P(pers);
+      if(p>38){ins.push({sev:'crit',title:`Costo personale alto · ${p.toFixed(1)}%`,text:`Costo del lavoro ${euro(pers)}, oltre il 38% degli incassi. Rivedi i turni nelle fasce a bassa affluenza e tieni d\'occhio gli straordinari.`});score-=12;}
+      else if(p>32){ins.push({sev:'warn',title:`Costo personale da monitorare · ${p.toFixed(1)}%`,text:`Costo del lavoro ${euro(pers)}, verso il limite alto. Controlla gli straordinari.`});score-=5;}
+      else{ins.push({sev:'good',title:`Costo personale in linea · ${p.toFixed(1)}%`,text:`Costo del lavoro ${euro(pers)}, nella norma.`});}}
+
+    // ── Prime cost (indicatore chiave) ──
+    if(prime>0){const p=P(prime);
+      if(p>65){ins.push({sev:'crit',title:`Prime cost critico · ${p.toFixed(1)}%`,text:`Food + personale = ${euro(prime)}, oltre il 65% degli incassi. È l\'indicatore più importante: oltre questa soglia è quasi impossibile fare utile. Agisci su materie prime e turni.`});score-=20;}
+      else if(p<=60){ins.push({sev:'good',title:`Prime cost sano · ${p.toFixed(1)}%`,text:`Food + personale al ${p.toFixed(1)}%, sotto la soglia del 65%: base solida per la redditività.`});}
+      else{ins.push({sev:'warn',title:`Prime cost da tenere d\'occhio · ${p.toFixed(1)}%`,text:`Food + personale al ${p.toFixed(1)}%, vicino al limite del 65%.`});score-=8;}}
+
+    // ── Affitto e utenze ──
+    if(aff>0){const p=P(aff);
+      if(p>15){ins.push({sev:'warn',title:`Affitto e utenze pesanti · ${p.toFixed(1)}%`,text:`Affitto + utenze = ${euro(aff)}, oltre il 15% degli incassi. Costo difficile da ridurre: significa che servono più incassi per coprire il fisso.`});score-=6;}
+      else{ins.push({sev:'good',title:`Affitto e utenze sostenibili · ${p.toFixed(1)}%`,text:`${euro(aff)}, entro la soglia del 15% degli incassi.`});}}
+  }
+
+  // ── Confronto anno precedente ──
+  const prec=precedente[String(mese)]||0;
+  if(prec>0&&ent>0){const d=ent-prec,dp=d/prec*100;
+    if(d>=0)ins.push({sev:'good',title:`In crescita sul ${ANNO-1} · +${dp.toFixed(0)}%`,text:`Questo mese ${euro(ent)} contro ${euro(prec)} dell\'anno scorso: +${euro(d)}.`});
+    else{ins.push({sev:'warn',title:`In calo sul ${ANNO-1} · ${dp.toFixed(0)}%`,text:`Questo mese ${euro(ent)} contro ${euro(prec)} dell\'anno scorso: ${euro(d)}. Capire la causa aiuta a recuperare.`});if(score!==null)score-=5;}
+  }
+
+  // ── Spese non ancora saldate ──
+  const k=String(mese);
+  const daPagare=(fisse[k]||[]).reduce((s,v)=>{const acc=(v.acconti||[]).reduce((a,x)=>a+x.importo,0);return s+Math.max(0,(v.importo||0)-acc);},0);
+  if(daPagare>0){ins.push({sev:'warn',title:'Spese ancora da saldare',text:`Restano ${euro(daPagare)} di spese fisse non ancora pagate questo mese. Pianifica i pagamenti per evitare accumuli.`});if(score!==null)score-=4;}
+
+  // ── Debiti ──
+  const dr=debiti.reduce((s,d)=>s+d.residuo,0);
+  if(dr>0){
+    if(saldo>0){const mesi=Math.ceil(dr/saldo);ins.push({sev:'info',title:`Debiti residui · ${euro(dr)}`,text:`Con l\'utile attuale di ${euro(saldo)}/mese servirebbero circa ${mesi} mes${mesi===1?'e':'i'} per estinguerli destinando tutto l\'utile.`});}
+    else{ins.push({sev:'crit',title:`Debiti residui · ${euro(dr)}`,text:`In pareggio/perdita non generi utile per ridurre i debiti. Priorità assoluta: tornare in utile.`});if(score!==null)score-=10;}
+  }else if(debiti.length>0){ins.push({sev:'good',title:'Debiti estinti',text:'Tutti i debiti registrati risultano saldati. Ottimo lavoro.'});}
+
+  // Ordina: prima i problemi più gravi
+  const ord={crit:0,warn:1,info:2,good:3};
+  ins.sort((a,b)=>ord[a.sev]-ord[b.sev]);
+  if(score!==null)score=Math.max(0,Math.min(100,Math.round(score)));
+  return {ins,ent,usc,saldo,by,food,pers,prime,aff,P,score};
+}
+
+const SEV={
+  crit:{c:'var(--neg)',bg:'rgba(163,45,45,0.10)',i:'!'},
+  warn:{c:'var(--ac)',bg:'var(--ac-bg)',i:'!'},
+  good:{c:'var(--pos)',bg:'rgba(15,110,86,0.10)',i:'✓'},
+  info:{c:'var(--txt2)',bg:'var(--surf2)',i:'i'}
+};
+function InsightCard({sev,title,text}){
+  const s=SEV[sev]||SEV.info;
+  return h('div',{style:{...card,padding:'13px 15px',borderLeft:`3px solid ${s.c}`,display:'flex',gap:'12px',alignItems:'flex-start'}},
+    h('div',{style:{width:'22px',height:'22px',borderRadius:'50%',background:s.bg,color:s.c,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:'600',flexShrink:0,marginTop:'1px'}},s.i),
+    h('div',{style:{flex:1}},
+      h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',color:s.c,marginBottom:'3px'}},title),
+      h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt2)',lineHeight:'1.6'}},text)
+    )
+  );
+}
+function Kpi({label,val,pct,ideal,ent}){
+  let col='var(--txt3)';
+  if(ent>0&&val>0&&ideal){col=pct>ideal.max?'var(--neg)':pct<ideal.min?'var(--ac)':'var(--pos)';}
+  return h('div',{style:{background:'var(--surf2)',borderRadius:'var(--rad)',padding:'12px 14px'}},
+    h('div',{style:{...HS,marginBottom:'6px'}},label),
+    h('div',{style:{fontFamily:'var(--mono)',fontSize:'18px',fontWeight:'500',color:col}},ent>0&&val>0?pct.toFixed(1)+'%':'—'),
+    h('div',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',marginTop:'2px'}},val>0?euro(val):(ideal?`ideale ${ideal.min}-${ideal.max}%`:''))
+  );
+}
+function Assistente(props){
+  const {mese,setMese}=props;
+  const a=analizza(props);
+  const scoreCol=a.score===null?'var(--txt3)':a.score>=75?'var(--pos)':a.score>=50?'var(--ac)':'var(--neg)';
+  const scoreLbl=a.score===null?'—':a.score>=75?'Conti in salute':a.score>=50?'Da tenere d\'occhio':'Situazione critica';
+  return h(Pg,null,
+    h(PgHdr,{title:'Assistente',right:h(MS,{mese,setMese})}),
+    // Punteggio di salute
+    h('div',{style:{...card,padding:'20px',marginBottom:'14px',display:'flex',alignItems:'center',gap:'20px',flexWrap:'wrap'}},
+      h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',minWidth:'110px'}},
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'42px',fontWeight:'500',color:scoreCol,lineHeight:1}},a.score===null?'—':a.score),
+        h('div',{style:{...HS,fontSize:'10px'}},'salute / 100')
+      ),
+      h('div',{style:{flex:1,minWidth:'180px'}},
+        h('div',{style:{fontFamily:'var(--pf)',fontSize:'18px',fontWeight:'500',color:scoreCol,marginBottom:'4px'}},scoreLbl),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt2)',lineHeight:'1.6'}},
+          a.ent>0?`Incasso ${euro(a.ent)} · Uscite ${euro(a.usc)} · Saldo ${euro(a.saldo)}`:'Inserisci le entrate del mese per calcolare il punteggio.')
+      )
+    ),
+    // KPI ristorazione
+    a.ent>0&&h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'14px'}},
+      h(Kpi,{label:'Food cost',val:a.food,pct:a.P(a.food),ideal:{min:22,max:36},ent:a.ent}),
+      h(Kpi,{label:'Costo personale',val:a.pers,pct:a.P(a.pers),ideal:{min:18,max:38},ent:a.ent}),
+      h(Kpi,{label:'Prime cost',val:a.prime,pct:a.P(a.prime),ideal:{min:0,max:65},ent:a.ent}),
+      h(Kpi,{label:'Affitto+utenze',val:a.aff,pct:a.P(a.aff),ideal:{min:0,max:15},ent:a.ent}),
+      h(Kpi,{label:'Margine',val:a.saldo>0?a.saldo:0,pct:a.P(a.saldo),ideal:{min:5,max:100},ent:a.ent})
+    ),
+    // Consigli
+    h('div',{style:{...HS,margin:'4px 2px 10px'}},`Analisi e consigli · ${a.ins.length}`),
+    h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
+      a.ins.map((x,i)=>h(InsightCard,{key:i,...x}))
+    ),
+    h('div',{style:{fontFamily:'var(--mono)',fontSize:'10px',color:'var(--txt3)',textAlign:'center',marginTop:'16px',lineHeight:'1.6'}},
+      'Analisi automatica basata sui dati inseriti e su benchmark della ristorazione. Indicazioni di supporto, non sostituiscono il commercialista.')
+  );
+}
+
 function App(){
   const [load,sLoad]=useState(true);
   const [err,sErr]=useState('');
@@ -615,7 +765,7 @@ function App(){
   const tf=m=>(data.fisse[String(m)]||[]).reduce((s,v)=>s+(v.importo||0),0);
   const tv=m=>data.variabili.filter(v=>gm(v.data)===m).reduce((s,v)=>s+v.importo,0);
 
-  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'}];
+  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'assistente',l:'✦ Assistente'}];
   const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,precedente:data.precedente,setPrecedente,te,tf,tv};
 
   // Schermata di setup
@@ -674,7 +824,8 @@ function App(){
     
     tab==='debiti'&&h(Debiti,sh),
     tab==='panoramica'&&h(Panoramica,sh),
-      tab==='analisi'&&h(Analisi,sh)
+      tab==='analisi'&&h(Analisi,sh),
+      tab==='assistente'&&h(Assistente,sh)
   );
 }
 
