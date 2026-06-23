@@ -292,7 +292,7 @@ function SpeseFisse({mese,setMese,fisse,setFisse,debiti,setDebiti}){
             // Riga 2: importo + stato allineato a destra
             h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}},
               h('input',{type:'number',value:v.importo||'',placeholder:'Importo €',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,importo:parseFloat(e.target.value)||0}:x)),style:{...IS,flex:1,padding:'7px 10px',fontSize:'14px'}}),
-              h('button',{onClick:()=>{const np=!(v.pagato||saldato);upd(c=>c.map(x=>x.id===v.id?{...x,pagato:np}:x));if(np&&v.debitoId&&v.importo>0){setDebiti(debiti.map(d=>d.id!==v.debitoId?d:{...d,residuo:Math.max(0,d.residuo-v.importo),rate:[...(d.rate||[]),{id:uid(),data:tod(),importo:v.importo,nota:v.nome}]}));}},style:btnSt(saldato,v.pagato)},saldato||v.pagato?'✓ Pagato':'⏳ Aperto')
+              h('button',{onClick:()=>{const np=!(v.pagato||saldato);upd(c=>c.map(x=>x.id===v.id?{...x,pagato:np}:x));if(np&&v.debitoId&&v.importo>0){setDebiti(debiti.map(d=>d.id!==v.debitoId?d:{...d,residuo:Math.max(0,d.residuo-v.importo),rate:[...(d.rate||[]),{id:uid(),data:tod(),importo:v.importo,nota:v.nome,src:'fisse'}]}));}},style:btnSt(saldato,v.pagato)},saldato||v.pagato?'✓ Pagato':'⏳ Aperto')
             ),
             // Riga 3: acconto + residuo
             v.importo>0&&h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
@@ -577,6 +577,10 @@ function analizza({mese,te,tf,tv,fisse,variabili,debiti,precedente}){
   const by=macroBreakdown(mese,fisse,variabili);
   const usc=tf(mese)+tv(mese);
   const saldo=ent-usc;
+  const dr=debiti.reduce((s,d)=>s+d.residuo,0);
+  const rateMese=debiti.reduce((s,d)=>s+(d.rate||[]).filter(r=>gm(r.data)===mese).reduce((a,r)=>a+r.importo,0),0);
+  const rateDir=debiti.reduce((s,d)=>s+(d.rate||[]).filter(r=>gm(r.data)===mese&&r.src!=='fisse').reduce((a,r)=>a+r.importo,0),0);
+  const cassaNetta=saldo-rateDir;
   const food=by['Food cost'],pers=by['Costo personale'],aff=by['Affitto e utenze'];
   const prime=food+pers;
   const P=v=>ent>0?v/ent*100:0;
@@ -591,6 +595,9 @@ function analizza({mese,te,tf,tv,fisse,variabili,debiti,precedente}){
     else if(P(saldo)<5){ins.push({sev:'warn',title:'Margine molto basso',text:`Utile di ${euro(saldo)}, solo il ${P(saldo).toFixed(1)}% degli incassi. Sotto il 5% il margine è fragile: un imprevisto manda il mese in rosso.`});score-=15;}
     else if(P(saldo)>=10){ins.push({sev:'good',title:'Buona redditività',text:`Utile di ${euro(saldo)}, pari al ${P(saldo).toFixed(1)}% degli incassi. Sopra il 10% è un ottimo risultato per la ristorazione.`});}
     else{ins.push({sev:'good',title:'Conti in equilibrio',text:`Utile di ${euro(saldo)} (${P(saldo).toFixed(1)}% degli incassi). Margine nella norma, c\'è spazio per migliorare.`});}
+
+    // ── Cassa dopo le rate dei debiti ──
+    if(rateDir>0&&cassaNetta<0){ins.push({sev:'warn',title:'Cassa negativa dopo le rate',text:`Margine operativo ${euro(saldo)}, ma dopo aver versato ${euro(rateDir)} di rate debiti la cassa del mese scende a ${euro(cassaNetta)}: stai attingendo alle riserve per pagare i finanziamenti.`});score-=10;}
 
     // ── Food cost ──
     if(food>0){const p=P(food);
@@ -629,9 +636,8 @@ function analizza({mese,te,tf,tv,fisse,variabili,debiti,precedente}){
   if(daPagare>0){ins.push({sev:'warn',title:'Spese ancora da saldare',text:`Restano ${euro(daPagare)} di spese fisse non ancora pagate questo mese. Pianifica i pagamenti per evitare accumuli.`});if(score!==null)score-=4;}
 
   // ── Debiti ──
-  const dr=debiti.reduce((s,d)=>s+d.residuo,0);
   if(dr>0){
-    if(saldo>0){const mesi=Math.ceil(dr/saldo);ins.push({sev:'info',title:`Debiti residui · ${euro(dr)}`,text:`Con l\'utile attuale di ${euro(saldo)}/mese servirebbero circa ${mesi} mes${mesi===1?'e':'i'} per estinguerli destinando tutto l\'utile.`});}
+    if(saldo>0){const mesi=Math.ceil(dr/saldo);ins.push({sev:'info',title:`Debiti residui · ${euro(dr)}`,text:`${rateMese>0?`Questo mese hai versato ${euro(rateMese)} di rate. `:''}Con l\'utile attuale di ${euro(saldo)}/mese servirebbero circa ${mesi} mes${mesi===1?'e':'i'} per estinguere il resto.`});}
     else{ins.push({sev:'crit',title:`Debiti residui · ${euro(dr)}`,text:`In pareggio/perdita non generi utile per ridurre i debiti. Priorità assoluta: tornare in utile.`});if(score!==null)score-=10;}
   }else if(debiti.length>0){ins.push({sev:'good',title:'Debiti estinti',text:'Tutti i debiti registrati risultano saldati. Ottimo lavoro.'});}
 
@@ -639,7 +645,7 @@ function analizza({mese,te,tf,tv,fisse,variabili,debiti,precedente}){
   const ord={crit:0,warn:1,info:2,good:3};
   ins.sort((a,b)=>ord[a.sev]-ord[b.sev]);
   if(score!==null)score=Math.max(0,Math.min(100,Math.round(score)));
-  return {ins,ent,usc,saldo,by,food,pers,prime,aff,P,score};
+  return {ins,ent,usc,saldo,by,food,pers,prime,aff,P,score,dr,rateMese,rateDir,cassaNetta};
 }
 
 const SEV={
@@ -693,6 +699,15 @@ function Assistente(props){
       h(Kpi,{label:'Prime cost',val:a.prime,pct:a.P(a.prime),ideal:{min:0,max:65},ent:a.ent}),
       h(Kpi,{label:'Affitto+utenze',val:a.aff,pct:a.P(a.aff),ideal:{min:0,max:15},ent:a.ent}),
       h(Kpi,{label:'Margine',val:a.saldo>0?a.saldo:0,pct:a.P(a.saldo),ideal:{min:5,max:100},ent:a.ent})
+    ),
+    // Riepilogo debiti
+    props.debiti.length>0&&h('div',{style:{...card,padding:'16px',marginBottom:'14px'}},
+      h('div',{style:{...HS,marginBottom:'12px'}},'Debiti'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'10px'}},
+        h(MC,{label:'Versato questo mese',value:a.rateMese>0?euro(a.rateMese):'—',color:'var(--pos)'}),
+        h(MC,{label:'Debiti residui',value:euro(a.dr),color:a.dr>0?'var(--neg)':'var(--pos)'}),
+        h(MC,{label:'Cassa dopo le rate',value:a.ent>0?euro(a.cassaNetta):'—',color:a.cassaNetta>=0?'var(--pos)':'var(--neg)'})
+      )
     ),
     // Consigli
     h('div',{style:{...HS,margin:'4px 2px 10px'}},`Analisi e consigli · ${a.ins.length}`),
