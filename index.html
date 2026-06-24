@@ -100,6 +100,8 @@ const euro=n=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).f
 const uid=()=>Math.random().toString(36).slice(2,9);
 const tod=()=>new Date().toISOString().slice(0,10);
 const fmt=d=>{if(!d)return'—';const p=d.split('-');return p.length===3?p[2]+'/'+p[1]:d;};
+const GIORNI=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+const fmtG=d=>{const p=(d||'').split('-');if(p.length!==3)return fmt(d);const dt=new Date(Number(p[0]),Number(p[1])-1,Number(p[2]));return GIORNI[dt.getDay()]+' '+fmt(d);};
 const gm=d=>new Date(d).getMonth()+1;
 
 // ── Rileva schermo mobile (iPhone) ───────────────────────────────
@@ -235,7 +237,7 @@ function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
   const tot=dailyTot>0?dailyTot:(passato?(precedente['m'+mese]||0):0);
   const add=()=>{if(!f.importo)return;setEntrate([...entrate,{id:uid(),data:f.data,importo:parseFloat(f.importo),nota:f.nota}]);sf({data:tod(),importo:'',nota:''});};
   const saveTot=()=>{if(!totInput)return;setPrecedente({...precedente,['m'+mese]:parseFloat(totInput)});sTotInput('');};
-  const C='130px 1fr 150px 28px';
+  const C='165px 1fr 135px 28px';
   return h(Pg,null,
     h(PgHdr,{title:'Entrate',right:h(MS,{mese,setMese})}),
     passato?h('div',{style:{...card,padding:'24px'}},
@@ -267,12 +269,12 @@ function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
         ?h(Row,{key:e.id,cols:'1fr auto 24px',del:()=>setEntrate(entrate.filter(x=>x.id!==e.id))},
           h('div',null,
             h('div',{style:{fontSize:'13px',color:'var(--txt)'}},e.nota||'Entrata'),
-            h('div',{style:{fontSize:'11px',color:'var(--txt3)',marginTop:'2px'}},fmt(e.data))
+            h('div',{style:{fontSize:'11px',color:'var(--txt3)',marginTop:'2px'}},fmtG(e.data))
           ),
           h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',color:'var(--pos)',fontWeight:'500'}},euro(e.importo))
         )
         :h(Row,{key:e.id,cols:C,del:()=>setEntrate(entrate.filter(x=>x.id!==e.id))},
-          h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},fmt(e.data)),
+          h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},fmtG(e.data)),
           h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},e.nota||'+'),
           h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',color:'var(--pos)',fontWeight:'500'}},euro(e.importo))
         )),
@@ -409,7 +411,7 @@ function SpeseVariabili({mese,setMese,variabili,setVariabili}){
   const tot=rows.reduce((s,v)=>s+v.importo,0);
   const cc={'Materie prime / F&B':'#0F6E56','Lavoro straordinario':'#BA7517','Marketing':'#534AB7','Manutenzioni':'#993C1D','Altro':'#5F5E5A'};
   const add=()=>{if(!f.importo)return;setVariabili([...variabili,{id:uid(),data:f.data,cat:f.cat,importo:parseFloat(f.importo),nota:f.nota}]);sf({data:tod(),cat:CATS[0],importo:'',nota:''});};
-  const C='120px 175px 1fr 145px 28px';
+  const C='155px 160px 1fr 130px 28px';
   return h(Pg,null,
     h(PgHdr,{title:'Spese variabili',right:h(MS,{mese,setMese})}),
     h('div',{style:{...card,padding:'18px',marginBottom:'14px'}},
@@ -429,12 +431,12 @@ function SpeseVariabili({mese,setMese,variabili,setVariabili}){
         ?h(Row,{key:v.id,cols:'1fr auto 24px',del:()=>setVariabili(variabili.filter(x=>x.id!==v.id))},
           h('div',null,
             h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:cc[v.cat]||'var(--txt2)'}},v.cat),
-            h('div',{style:{fontSize:'11px',color:'var(--txt3)',marginTop:'2px'}},fmt(v.data)+(v.nota?' · '+v.nota:''))
+            h('div',{style:{fontSize:'11px',color:'var(--txt3)',marginTop:'2px'}},fmtG(v.data)+(v.nota?' · '+v.nota:''))
           ),
           h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',color:'var(--neg)',fontWeight:'500'}},euro(v.importo))
         )
         :h(Row,{key:v.id,cols:C,del:()=>setVariabili(variabili.filter(x=>x.id!==v.id))},
-          h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},fmt(v.data)),
+          h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},fmtG(v.data)),
           h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:cc[v.cat]||'var(--txt2)'}},v.cat),
           h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},v.nota||'—'),
           h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',color:'var(--neg)',fontWeight:'500'}},euro(v.importo))
