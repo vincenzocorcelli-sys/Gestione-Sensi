@@ -251,15 +251,21 @@ function SpeseFisse({mese,setMese,fisse,setFisse,debiti,setDebiti}){
   const mkVoci=()=>{
     if(fisse[k])return fisse[k];
     const prev=[...MN].slice().reverse().find(m=>m<mese&&fisse[String(m)]);
-    if(prev)return fisse[String(prev)].map(v=>({...v,id:uid(),importo:0,acconti:[],pagato:false,macro:v.macro||autoMacro(v.nome),debitoId:v.debitoId||''}));
+    if(prev)return fisse[String(prev)].map(v=>{
+      const accP=(v.acconti||[]).reduce((s,a)=>s+a.importo,0);
+      const resP=Math.max(0,(v.importo||0)+(v.riporto||0)-accP);
+      return {...v,id:uid(),importo:0,acconti:[],pagato:false,riporto:v.pagato?0:resP,macro:v.macro||autoMacro(v.nome),debitoId:v.debitoId||''};
+    });
     return FN.map(n=>({id:uid(),nome:n,importo:0,acconti:[],pagato:false,macro:autoMacro(n),debitoId:''}));
   };
   const upd=fn=>{const cur=mkVoci();setFisse({...fisse,[k]:fn(cur)});};
-  const norm=v=>({acconti:[],...v});
+  const norm=v=>({acconti:[],riporto:0,...v});
   const voci=mkVoci().map(norm).sort((a,b)=>{const ma=MACRO.indexOf(a.macro||autoMacro(a.nome));const mb=MACRO.indexOf(b.macro||autoMacro(b.nome));return ma-mb;});
   const accTot=v=>(v.acconti||[]).reduce((s,a)=>s+a.importo,0);
-  const res=v=>Math.max(0,(v.importo||0)-accTot(v));
+  const dovuto=v=>(v.importo||0)+(v.riporto||0);
+  const res=v=>Math.max(0,dovuto(v)-accTot(v));
   const totI=voci.reduce((s,v)=>s+(v.importo||0),0);
+  const totRip=voci.reduce((s,v)=>s+(v.riporto||0),0);
   const totA=voci.reduce((s,v)=>s+accTot(v),0);
   const totR=voci.reduce((s,v)=>s+res(v),0);
   const addAcc=vId=>{
@@ -281,12 +287,15 @@ function SpeseFisse({mese,setMese,fisse,setFisse,debiti,setDebiti}){
     h(PgHdr,{title:'Spese',right:h(MS,{mese,setMese})}),
     h('div',{style:{...card}},
       voci.map(v=>{
-        const ac=accTot(v),rv=res(v),io=open===v.id,saldato=rv===0&&v.importo>0;
+        const ac=accTot(v),rv=res(v),io=open===v.id,saldato=rv===0&&dovuto(v)>0;
         return h(Fragment,{key:v.id},
           h('div',{style:{padding:'12px 16px',borderBottom:'0.5px solid var(--border)'}},
             // Riga 1: nome + pulsante elimina
-            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
-              h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)'}},v.nome),
+            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'10px'}},
+              h('div',null,
+                h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)'}},v.nome),
+                v.riporto>0&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--neg)',marginTop:'3px'}},`↩ ${euro(v.riporto)} non pagato dal mese scorso`)
+              ),
               h('button',{onClick:()=>upd(c=>c.filter(x=>x.id!==v.id)),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'18px',padding:0,cursor:'pointer',lineHeight:1}},'×')
             ),
             // Riga 2: importo + stato allineato a destra
@@ -295,7 +304,7 @@ function SpeseFisse({mese,setMese,fisse,setFisse,debiti,setDebiti}){
               h('button',{onClick:()=>{const np=!(v.pagato||saldato);upd(c=>c.map(x=>x.id===v.id?{...x,pagato:np}:x));if(np&&v.debitoId&&v.importo>0){setDebiti(debiti.map(d=>d.id!==v.debitoId?d:{...d,residuo:Math.max(0,d.residuo-v.importo),rate:[...(d.rate||[]),{id:uid(),data:tod(),importo:v.importo,nota:v.nome,src:'fisse'}]}));}},style:btnSt(saldato,v.pagato)},saldato||v.pagato?'✓ Pagato':'⏳ Aperto')
             ),
             // Riga 3: acconto + residuo
-            v.importo>0&&h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
+            (v.importo>0||v.riporto>0)&&h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
               h('div',{style:{flex:1,display:'flex',gap:'6px',alignItems:'center'}},
                 h('span',{style:{...HS,fontSize:'10px'}},'Acconto:'),
                 h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:ac>0?'var(--pos)':'var(--txt3)',cursor:'pointer',textDecoration:'underline',textDecorationStyle:'dotted'},onClick:()=>sOpen(io?null:v.id)},ac>0?euro(ac):'+ aggiungi')
@@ -345,6 +354,7 @@ function SpeseFisse({mese,setMese,fisse,setFisse,debiti,setDebiti}){
       ),
       h('div',{style:{padding:'12px 16px',borderTop:'0.5px solid var(--border2)',background:'var(--surf2)',display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:'8px'}},
         h('div',{style:{display:'flex',flexDirection:'column',gap:'2px'}},h('div',{style:HS},'Totale'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--ac)'}},euro(totI))),
+        totRip>0&&h('div',{style:{display:'flex',flexDirection:'column',gap:'2px',textAlign:'center'}},h('div',{style:HS},'Riporto'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--neg)'}},euro(totRip))),
         h('div',{style:{display:'flex',flexDirection:'column',gap:'2px',textAlign:'center'}},h('div',{style:HS},'Acconti'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--pos)'}},totA>0?euro(totA):'—')),
         h('div',{style:{display:'flex',flexDirection:'column',gap:'2px',textAlign:'right'}},h('div',{style:HS},'Da pagare'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:totR>0?'var(--neg)':'var(--pos)'}},euro(totR)))
       )
@@ -632,7 +642,7 @@ function analizza({mese,te,tf,tv,fisse,variabili,debiti,precedente}){
 
   // ── Spese non ancora saldate ──
   const k=String(mese);
-  const daPagare=(fisse[k]||[]).reduce((s,v)=>{const acc=(v.acconti||[]).reduce((a,x)=>a+x.importo,0);return s+Math.max(0,(v.importo||0)-acc);},0);
+  const daPagare=(fisse[k]||[]).reduce((s,v)=>{const acc=(v.acconti||[]).reduce((a,x)=>a+x.importo,0);return s+Math.max(0,(v.importo||0)+(v.riporto||0)-acc);},0);
   if(daPagare>0){ins.push({sev:'warn',title:'Spese ancora da saldare',text:`Restano ${euro(daPagare)} di spese fisse non ancora pagate questo mese. Pianifica i pagamenti per evitare accumuli.`});if(score!==null)score-=4;}
 
   // ── Debiti ──
