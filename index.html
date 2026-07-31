@@ -779,6 +779,83 @@ function Assistente(props){
   );
 }
 
+// ── Report annuale ───────────────────────────────────────────────
+function cashByMacro(mese,fisse,variabili){
+  const by={};MACRO.forEach(k=>by[k]=0);
+  Object.keys(fisse).forEach(kk=>{(fisse[kk]||[]).forEach(v=>{const mac=v.macro||autoMacro(v.nome);(v.acconti||[]).forEach(a=>{if(gm(a.data)===mese)by[mac]+=a.importo;});});});
+  variabili.filter(v=>gm(v.data)===mese).forEach(v=>{by[mapVarMacro(v.cat)]+=v.importo;});
+  return by;
+}
+function Report({te,tf,tv,fisse,variabili,debiti,precedente}){
+  const [vista,sVista]=useState('comp');
+  const cm=new Date().getMonth()+1;
+  const attivi=MN.filter(m=>m<=cm);
+  const entY=attivi.reduce((s,m)=>s+te(m),0);
+  const um=m=>{if(vista==='comp')return tf(m)+tv(m);const b=cashByMacro(m,fisse,variabili);return Object.values(b).reduce((s,v)=>s+v,0);};
+  const uscY=attivi.reduce((s,m)=>s+um(m),0);
+  const salY=entY-uscY;
+  const byY={};MACRO.forEach(k=>byY[k]=0);
+  attivi.forEach(m=>{const b=vista==='comp'?macroBreakdown(m,fisse,variabili):cashByMacro(m,fisse,variabili);MACRO.forEach(k=>byY[k]+=b[k]||0);});
+  const P=v=>entY>0?(v/entY*100):0;
+  const fpc=v=>entY>0?v.toFixed(1).replace('.',',')+'%':'—';
+  let cum=0;
+  const righe=MN.map((m,i)=>{
+    const e=te(m),u=um(m),s=e-u,hd=(e>0||u>0)&&m<=cm;
+    if(hd)cum+=s;
+    return {m,i,e,u,s,cum:hd?cum:null,hd};
+  });
+  const dr=debiti.reduce((s,d)=>s+d.residuo,0);
+  const tpA=attivi.reduce((s,m)=>s+(precedente[String(m)]||0),0);
+  const C='72px 1fr 1fr 1fr 1fr';
+  return h(Pg,null,
+    h(PgHdr,{title:'Report annuale',right:h('div',{style:{display:'flex',gap:'4px',alignItems:'center'}},
+      h('button',{onClick:()=>sVista('comp'),className:`nb${vista==='comp'?' on':''}`,style:{fontSize:'12px',padding:'6px 10px'}},'Dovuto'),
+      h('button',{onClick:()=>sVista('cassa'),className:`nb${vista==='cassa'?' on':''}`,style:{fontSize:'12px',padding:'6px 10px'}},'Pagato')
+    )}),
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'16px'}},
+      h(MC,{label:`Entrate ${ANNO}`,value:euro(entY),color:'var(--pos)'}),
+      h(MC,{label:`Uscite ${ANNO}`,value:euro(uscY),color:'var(--neg)'}),
+      h(MC,{label:'Risultato',value:euro(salY),color:salY>=0?'var(--pos)':'var(--neg)'}),
+      tpA>0?h(MC,{label:`Entrate ${ANNO-1} stesso periodo`,value:euro(tpA),color:'var(--txt2)'}):null,
+      h(MC,{label:'Debiti residui',value:euro(dr),color:'var(--neg)'})
+    ),
+    h('div',{style:{...card,marginBottom:'16px'}},
+      h('div',{style:{padding:'14px 16px',borderBottom:'0.5px solid var(--border)'}},
+        h('div',{style:{fontFamily:'var(--pf)',fontSize:'16px',fontWeight:'500'}},'Spese per tipologia — anno'),
+        h('div',{style:{...HS,fontSize:'10px',marginTop:'3px'}},'% calcolata sulle entrate dell\'anno')
+      ),
+      MACRO.map(k=>{
+        const v=byY[k]||0;if(v===0)return null;
+        const p=P(v);
+        return h('div',{key:k,style:{display:'grid',gridTemplateColumns:'minmax(105px,150px) 1fr 92px 56px',gap:'10px',padding:'10px 16px',borderBottom:'0.5px solid var(--border)',alignItems:'center'}},
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:MACRO_C[k]}},k),
+          h('div',{style:{height:'6px',background:'var(--surf2)',borderRadius:'3px',overflow:'hidden'}},
+            h('div',{style:{height:'100%',width:`${Math.min(p,100)}%`,background:MACRO_C[k],transition:'width 0.4s'}})
+          ),
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt2)',textAlign:'right'}},euro(v)),
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',fontWeight:'500',color:MACRO_C[k],textAlign:'right'}},fpc(p))
+        );
+      }),
+      h('div',{style:{padding:'11px 16px',display:'flex',justifyContent:'space-between',background:'var(--surf2)'}},
+        h('span',{style:HS},'Totale uscite'),
+        h('span',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:'var(--neg)'}},euro(uscY))
+      )
+    ),
+    h('div',{style:{...card,overflowX:'auto'}},
+      h(TH,{cols:C,headers:['Mese','Entrate',vista==='comp'?'Dovuto':'Pagato','Risultato','Cumulato']}),
+      righe.map(r=>h('div',{key:r.m,className:'rh',style:{display:'grid',gridTemplateColumns:C,padding:'10px 16px',borderBottom:'0.5px solid var(--border)',alignItems:'center',opacity:r.hd?1:0.35,background:r.m===cm?'var(--ac-bg)':'transparent'}},
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:'var(--txt2)'}},MESI[r.i].slice(0,3)+(r.m===cm?' •':'')),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:r.e>0?'var(--pos)':'var(--txt3)'}},r.e>0?euro(r.e):'—'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:r.u>0?'var(--ac)':'var(--txt3)'}},r.u>0?euro(r.u):'—'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',color:!r.hd?'var(--txt3)':r.s>=0?'var(--pos)':'var(--neg)'}},r.hd?euro(r.s):'—'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',color:r.cum===null?'var(--txt3)':r.cum>=0?'var(--pos)':'var(--neg)'}},r.cum!==null?euro(r.cum):'—')
+      )),
+      h(Foot,{label:'Risultato anno',value:euro(salY),color:salY>=0?'var(--pos)':'var(--neg)'})
+    ),
+    h('div',{style:{...HS,fontSize:'10px',textAlign:'center',padding:'14px 0 20px'}},'Dovuto = costi assegnati al mese · Pagato = soldi usciti davvero nel mese (dagli acconti registrati)')
+  );
+}
+
 function App(){
   const [load,sLoad]=useState(true);
   const [err,sErr]=useState('');
@@ -840,7 +917,7 @@ function App(){
   const tf=m=>(data.fisse[String(m)]||[]).reduce((s,v)=>s+(v.importo||0),0);
   const tv=m=>data.variabili.filter(v=>gm(v.data)===m).reduce((s,v)=>s+v.importo,0);
 
-  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'assistente',l:'✦ Assistente'}];
+  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'report',l:'Report'},{id:'assistente',l:'✦ Assistente'}];
   const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,precedente:data.precedente,setPrecedente,te,tf,tv};
 
   // Schermata di setup
@@ -876,7 +953,8 @@ function App(){
           h('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
             syncing&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'Salvataggio…'),
             !syncing&&lastSync&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},`Sync ${lastSync.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`),
-            h('button',{onClick:()=>jbLoad().then(d=>{if(d)sData({...EMPTY,...d});sLastSync(new Date());}),style:{background:'none',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt2)',cursor:'pointer'}},'🔄 Aggiorna')
+            h('button',{onClick:()=>jbLoad().then(d=>{if(d)sData({...EMPTY,...d});sLastSync(new Date());}),style:{background:'none',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt2)',cursor:'pointer'}},'🔄 Aggiorna'),
+            h('button',{onClick:e=>{const b=e.target,json=JSON.stringify(data,null,2);const fb=()=>{const w=window.open('','_blank','width=680,height=560');w.document.write('<!DOCTYPE html><html><head><title>Dati SENSI per Claude</title><style>body{margin:0;background:#111;color:#f0ebe0;font-family:monospace;}.hd{padding:12px 16px;background:#1c1c1c;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;}h3{margin:0;font-size:13px;color:#EF9F27;}button{background:#EF9F27;color:#111;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;}textarea{width:100%;height:calc(100vh - 50px);background:#111;color:#f0ebe0;border:none;padding:16px;font-size:11px;line-height:1.6;resize:none;}</style></head><body><div class=\'hd\'><h3>📋 Dati SENSI — copia e incolla nella chat con Claude</h3><button onclick=\'navigator.clipboard.writeText(document.querySelector("textarea").value).then(()=>{this.textContent="✓ Copiato!"})\'>Copia tutto</button></div><textarea readonly>'+json.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</textarea></body></html>');};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(json).then(()=>{b.textContent='✓ Copiato!';setTimeout(()=>{b.textContent='📋 per Claude';},2200);}).catch(fb);}else{fb();}},style:{background:'none',border:'0.5px solid var(--ac)',borderRadius:'var(--rad)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:'11px',color:'var(--ac)',cursor:'pointer',fontWeight:'500'}},'📋 per Claude')
           )
         ),
         h('div',{style:{display:'flex',gap:'2px',overflowX:'auto',marginBottom:'-0.5px'}},
@@ -900,6 +978,7 @@ function App(){
     tab==='debiti'&&h(Debiti,sh),
     tab==='panoramica'&&h(Panoramica,sh),
       tab==='analisi'&&h(Analisi,sh),
+      tab==='report'&&h(Report,sh),
       tab==='assistente'&&h(Assistente,sh)
   );
 }
