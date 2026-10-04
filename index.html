@@ -576,18 +576,17 @@ const TIPI_EV=['Banchetto','Catering','Cena privata','Aziendale','Altro'];
 const STATI_EV={opzione:{l:'Opzione',c:'var(--txt3)'},confermato:{l:'Confermato',c:'var(--ac)'},fatto:{l:'Fatto',c:'#534AB7'},saldato:{l:'Saldato',c:'var(--pos)'}};
 
 function Eventi({mese,setMese,eventi,setEventi}){
-  const [open,sOpen]=useState(null);
-  const [nn,snn]=useState('');
   const [vista,sVista]=useState('cal');
   const [gSel,sGSel]=useState('');
+  const [f,sF]=useState(null);
   const [af,saf]=useState({data:tod(),importo:'',nota:''});
+  const [err,sErr]=useState('');
 
-  const norm=e=>({tipo:TIPI_EV[0],persone:0,prezzo:0,acconti:[],cFood:0,cPers:0,cAltro:0,stato:'opzione',note:'',data:'',...e});
+  const norm=e=>({tipo:TIPI_EV[0],persone:0,prezzo:0,acconti:[],cFood:0,cPers:0,cAltro:0,stato:'opzione',note:'',data:'',nome:'',...e});
   const tutti=(eventi||[]).map(norm);
   const lista=tutti.filter(e=>!e.data||gm(e.data)===mese).sort((a,b)=>(a.data||'9').localeCompare(b.data||'9'));
-
   const listaV=gSel?lista.filter(e=>e.data===gSel):lista;
-  const setE=(id,patch)=>setEventi(tutti.map(x=>x.id===id?{...x,...patch}:x));
+
   const inc=e=>(e.acconti||[]).reduce((s,a)=>s+a.importo,0);
   const costi=e=>(e.cFood||0)+(e.cPers||0)+(e.cAltro||0);
   const marg=e=>(e.prezzo||0)-costi(e);
@@ -609,14 +608,89 @@ function Eventi({mese,setMese,eventi,setEventi}){
   const dstr=d=>`${ANNO}-${String(mese).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   const evDi=d=>lista.filter(e=>e.data===dstr(d));
 
-  const addEv=()=>{if(!nn.trim())return;setEventi([...tutti,{id:uid(),nome:nn.trim(),data:`${ANNO}-${String(mese).padStart(2,'0')}-01`,tipo:TIPI_EV[0],persone:0,prezzo:0,acconti:[],cFood:0,cPers:0,cAltro:0,stato:'opzione',note:''}]);snn('');};
-  const addAcc=id=>{if(!af.importo)return;setEventi(tutti.map(x=>x.id!==id?x:{...x,acconti:[...(x.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),nota:af.nota}]}));saf({data:tod(),importo:'',nota:''});};
+  const campo=(lab,el,fx)=>h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',flex:fx||'1 1 130px',minWidth:0}},h('span',{style:{...HS,fontSize:'9.5px'}},lab),el);
+  const inp=(val,fn,tp,ph)=>h('input',{type:tp||'text',value:(val===0&&tp==='number')?'':(val||''),placeholder:ph||'',onChange:e=>fn(e.target.value),style:{...IS,padding:'9px 10px',fontSize:'14px'}});
 
-  const campo=(lab,el,fx)=>h('div',{style:{display:'flex',flexDirection:'column',gap:'3px',flex:fx||'1 1 128px',minWidth:0}},h('span',{style:{...HS,fontSize:'9.5px'}},lab),el);
-  const inp=(val,fn,tp,ph)=>h('input',{type:tp||'text',value:(val===0&&tp==='number')?'':(val||''),placeholder:ph||'',onChange:e=>fn(e.target.value),onClick:e=>e.stopPropagation(),style:{...IS,padding:'8px 9px',fontSize:'13px'}});
+  // ── Form nuovo / modifica ──
+  const nuovo=()=>{const dft=(new Date().getMonth()+1)===mese?tod():dstr(1);sErr('');saf({data:tod(),importo:'',nota:''});sF({id:uid(),nome:'',data:dft,tipo:TIPI_EV[0],persone:0,prezzo:0,acconti:[],cFood:0,cPers:0,cAltro:0,stato:'opzione',note:'',_new:true});};
+  const apri=e=>{sErr('');saf({data:tod(),importo:'',nota:''});sF({...norm(e),_new:false});};
+  const sfF=p=>sF({...f,...p});
+  const salva=()=>{
+    if(!f.nome.trim()){sErr('Serve almeno il nome');return;}
+    const {_new,...ev}=f;
+    setEventi(_new?[...tutti,ev]:tutti.map(x=>x.id===ev.id?ev:x));
+    sF(null);
+  };
+  const elimina=()=>{setEventi(tutti.filter(x=>x.id!==f.id));sF(null);};
+  const addAccF=()=>{if(!af.importo)return;sfF({acconti:[...(f.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),nota:af.nota}]});saf({data:tod(),importo:'',nota:''});};
 
+  if(f){
+    const st=STATI_EV[f.stato]||STATI_EV.opzione,m=marg(f),rs=resid(f);
+    return h(Pg,null,
+      h(PgHdr,{title:f._new?'Nuovo evento':'Modifica evento',right:h('button',{onClick:()=>sF(null),style:{background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--txt2)',fontFamily:'var(--mono)',fontSize:'12px',padding:'8px 14px',cursor:'pointer',minHeight:'36px'}},'Annulla')}),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+          campo('Tipo di evento',h('select',{value:f.tipo,onChange:v=>sfF({tipo:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px'}},TIPI_EV.map(t=>h('option',{key:t,value:t},t)))),
+          campo('Stato',h('select',{value:f.stato,onChange:v=>sfF({stato:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px',color:st.c}},Object.keys(STATI_EV).map(s=>h('option',{key:s,value:s},STATI_EV[s].l))))
+        ),
+        h('div',{style:{marginBottom:'11px'}},campo('Nome / cliente',inp(f.nome,x=>{sErr('');sfF({nome:x});},'text','Matrimonio Rossi, Cena aziendale...'),'1 1 100%')),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+          campo('Data',inp(f.data,x=>sfF({data:x}),'date')),
+          campo('Partecipanti',inp(f.persone,x=>sfF({persone:parseInt(x,10)||0}),'number','0'))
+        ),
+        h('div',null,campo('Note',h('textarea',{value:f.note||'',placeholder:'Menu, orari, referente, accordi...',onChange:v=>sfF({note:v.target.value}),rows:3,style:{...IS,padding:'9px 10px',fontSize:'14px',resize:'vertical',lineHeight:'1.5'}}),'1 1 100%'))
+      ),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Economia dell evento'),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+          campo('Prezzo totale',inp(f.prezzo,x=>sfF({prezzo:parseFloat(x)||0}),'number','0,00')),
+          campo('A persona',h('div',{style:{...IS,padding:'9px 10px',fontSize:'14px',color:'var(--txt3)',background:'transparent'}},f.persone>0?euro(f.prezzo/f.persone):'—'))
+        ),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+          campo('Costo food',inp(f.cFood,x=>sfF({cFood:parseFloat(x)||0}),'number','0,00')),
+          campo('Personale extra',inp(f.cPers,x=>sfF({cPers:parseFloat(x)||0}),'number','0,00')),
+          campo('Altri costi',inp(f.cAltro,x=>sfF({cAltro:parseFloat(x)||0}),'number','0,00'))
+        ),
+        h('div',{style:{display:'flex',justifyContent:'space-between',borderTop:'0.5px solid var(--border)',paddingTop:'10px'}},
+          h('div',null,h('div',{style:{...HS,fontSize:'9px'}},'Margine'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:m>=0?'var(--pos)':'var(--neg)',marginTop:'2px'}},euro(m))),
+          h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9px'}},'Margine %'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:margP(f)>=50?'var(--pos)':margP(f)>=35?'var(--ac)':'var(--neg)',marginTop:'2px'}},f.prezzo>0?margP(f).toFixed(0)+'%':'—')),
+          h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9px'}},'Da incassare'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:rs>0?'var(--neg)':'var(--pos)',marginTop:'2px'}},euro(rs)))
+        )
+      ),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'14px'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'9px'}},
+          h('span',{style:{...HS,fontSize:'9.5px'}},'Caparre e saldi'),
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)'}},inc(f)>0?euro(inc(f)):'—')
+        ),
+        (f.acconti||[]).map(a=>h('div',{key:a.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'7px 0',borderBottom:'0.5px solid var(--border)'}},
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt3)',width:'52px',flexShrink:0}},FMD(a.data)),
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},a.nota||'—'),
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)',fontWeight:'500'}},euro(a.importo)),
+          h('button',{onClick:()=>sfF({acconti:(f.acconti||[]).filter(x=>x.id!==a.id)}),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'16px',padding:'0 2px 0 6px',cursor:'pointer'}},'×')
+        )),
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'flex-end',marginTop:'10px'}},
+          campo('Data',inp(af.data,x=>saf({...af,data:x}),'date')),
+          campo('Importo',inp(af.importo,x=>saf({...af,importo:x}),'number','0,00')),
+          campo('Nota',inp(af.nota,x=>saf({...af,nota:x}),'text','Caparra, saldo...')),
+          h(GB,{onClick:addAccF,st:{whiteSpace:'nowrap',minHeight:'38px'}},'+ Incasso')
+        )
+      ),
+
+      err&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--neg)',textAlign:'center',marginBottom:'10px'}},err),
+      h('button',{onClick:salva,style:{width:'100%',border:'none',borderRadius:'var(--rad)',background:'var(--ac)',color:'#fff',fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',padding:'14px',cursor:'pointer',marginBottom:'10px'}},'Salva evento'),
+      !f._new&&h('button',{onClick:elimina,style:{width:'100%',background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--neg)',fontFamily:'var(--mono)',fontSize:'13px',padding:'11px',cursor:'pointer',marginBottom:'24px'}},'Elimina evento')
+    );
+  }
+
+  // ── Vista calendario / elenco ──
   return h(Pg,null,
     h(PgHdr,{title:'Eventi',right:h(MS,{mese,setMese})}),
+
+    h('button',{onClick:nuovo,style:{width:'100%',border:'none',borderRadius:'var(--rad)',background:'var(--ac)',color:'#fff',fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',padding:'13px',cursor:'pointer',marginBottom:'12px'}},'+  Nuovo evento'),
+
     h('div',{style:{...card,padding:'12px 13px',marginBottom:'10px'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',marginBottom:'10px'}},
         h('div',null,h('div',{style:{...HS,fontSize:'9.5px'}},`Eventi · ${tPers} pers.`),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--txt)',marginTop:'2px'}},lista.length)),
@@ -629,10 +703,12 @@ function Eventi({mese,setMese,eventi,setEventi}){
         h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Incassato'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:'var(--pos)',marginTop:'2px'}},tInc>0?euro(tInc):'—'))
       )
     ),
+
     h('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},
-      h('button',{onClick:()=>{sVista('cal');},style:{flex:1,border:`0.5px solid ${vista==='cal'?'var(--ac)':'var(--border2)'}`,background:vista==='cal'?'var(--ac-bg)':'transparent',color:vista==='cal'?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},'Calendario'),
+      h('button',{onClick:()=>sVista('cal'),style:{flex:1,border:`0.5px solid ${vista==='cal'?'var(--ac)':'var(--border2)'}`,background:vista==='cal'?'var(--ac-bg)':'transparent',color:vista==='cal'?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},'Calendario'),
       h('button',{onClick:()=>{sVista('elenco');sGSel('');},style:{flex:1,border:`0.5px solid ${vista==='elenco'?'var(--ac)':'var(--border2)'}`,background:vista==='elenco'?'var(--ac-bg)':'transparent',color:vista==='elenco'?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},'Elenco')
     ),
+
     vista==='cal'&&h('div',{style:{...card,padding:'10px 8px 12px',marginBottom:'10px'}},
       h('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'3px',marginBottom:'4px'}},
         ['L','M','M','G','V','S','D'].map((g,i)=>h('div',{key:i,style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'3px 0'}},g))
@@ -654,81 +730,30 @@ function Eventi({mese,setMese,eventi,setEventi}){
         h('button',{onClick:()=>sGSel(''),style:{background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--txt2)',fontFamily:'var(--mono)',fontSize:'11px',padding:'5px 10px',cursor:'pointer'}},'Mostra tutto')
       )
     ),
+
     h('div',{style:{...card}},
       listaV.length===0&&h('div',{style:{padding:'32px 16px',textAlign:'center',color:'var(--txt3)',fontSize:'13px'}},gSel?'Nessun evento in questo giorno':'Nessun evento questo mese'),
       listaV.map(e=>{
-        const io=open===e.id,st=STATI_EV[e.stato]||STATI_EV.opzione,m=marg(e),rs=resid(e);
-        return h(Fragment,{key:e.id},
-          h('div',{onClick:()=>sOpen(io?null:e.id),style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 13px 11px 10px',borderLeft:`3px solid ${st.c}`,borderBottom:'0.5px solid var(--border)',cursor:'pointer',background:io?'var(--surf2)':'transparent'}},
-            h('div',{style:{flex:1,minWidth:0}},
-              h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},e.nome),
-              h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'4px',flexWrap:'wrap'}},
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:st.c,border:`0.5px solid ${st.c}`,borderRadius:'12px',padding:'3px 9px'}},st.l),
-                e.data&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},FMD(e.data)),
-                e.persone>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},`${e.persone} pers.`),
-                rs>0&&e.prezzo>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--neg)'}},`da inc. ${euro(rs)}`)
-              )
-            ),
-            h('div',{style:{textAlign:'right',flexShrink:0}},
-              h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:m>=0?'var(--pos)':'var(--neg)'}},euro(m)),
-              h('div',{style:{...HS,fontSize:'9px',marginTop:'2px'}},e.prezzo>0?`margine ${margP(e).toFixed(0)}%`:'margine')
-            ),
-            h('span',{style:{color:'var(--txt3)',fontSize:'13px',flexShrink:0,transform:io?'rotate(90deg)':'none',transition:'transform 0.15s'}},'›')
-          ),
-          io&&h('div',{style:{padding:'14px 13px',background:'var(--surf2)',borderBottom:'0.5px solid var(--border)'}},
-            h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
-              campo('Nome / cliente',inp(e.nome,x=>setE(e.id,{nome:x}),'text','—'),'1 1 100%'),
-              campo('Data',inp(e.data,x=>setE(e.id,{data:x}),'date')),
-              campo('Tipo',h('select',{value:e.tipo,onClick:v=>v.stopPropagation(),onChange:v=>setE(e.id,{tipo:v.target.value}),style:{...IS,padding:'8px 9px',fontSize:'13px'}},TIPI_EV.map(t=>h('option',{key:t,value:t},t)))),
-              campo('Stato',h('select',{value:e.stato,onClick:v=>v.stopPropagation(),onChange:v=>setE(e.id,{stato:v.target.value}),style:{...IS,padding:'8px 9px',fontSize:'13px',color:st.c}},Object.keys(STATI_EV).map(s=>h('option',{key:s,value:s},STATI_EV[s].l))))
-            ),
-            h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
-              campo('Persone',inp(e.persone,x=>setE(e.id,{persone:parseInt(x,10)||0}),'number','0')),
-              campo('Prezzo totale €',inp(e.prezzo,x=>setE(e.id,{prezzo:parseFloat(x)||0}),'number','0,00')),
-              campo('A persona',h('div',{style:{...IS,padding:'8px 9px',fontSize:'13px',color:'var(--txt3)',background:'transparent'}},e.persone>0?euro(e.prezzo/e.persone):'—'))
-            ),
-            h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'6px'}},'Costi diretti dell\'evento'),
-            h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
-              campo('Food & beverage €',inp(e.cFood,x=>setE(e.id,{cFood:parseFloat(x)||0}),'number','0,00')),
-              campo('Personale extra €',inp(e.cPers,x=>setE(e.id,{cPers:parseFloat(x)||0}),'number','0,00')),
-              campo('Altro €',inp(e.cAltro,x=>setE(e.id,{cAltro:parseFloat(x)||0}),'number','0,00'))
-            ),
-            h('div',{style:{marginBottom:'12px'}},campo('Note',inp(e.note,x=>setE(e.id,{note:x}),'text','Menu, orari, accordi, referente…'),'1 1 100%')),
-
-            h('div',{style:{borderTop:'0.5px solid var(--border)',paddingTop:'11px'}},
-              h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'8px'}},
-                h('span',{style:HS},'Acconti e saldi'),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)'}},inc(e)>0?euro(inc(e)):'—')
-              ),
-              (e.acconti||[]).map(a=>h('div',{key:a.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 0',borderBottom:'0.5px solid var(--border)'}},
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt3)',width:'52px',flexShrink:0}},FMD(a.data)),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},a.nota||'—'),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)',fontWeight:'500'}},euro(a.importo)),
-                h('button',{onClick:v=>{v.stopPropagation();setEventi(tutti.map(x=>x.id!==e.id?x:{...x,acconti:(x.acconti||[]).filter(aa=>aa.id!==a.id)}));},style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'16px',padding:'0 2px 0 6px',cursor:'pointer'}},'×')
-              )),
-              h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',alignItems:'flex-end',marginTop:'9px'}},
-                campo('Data',inp(af.data,x=>saf({...af,data:x}),'date')),
-                campo('Importo €',inp(af.importo,x=>saf({...af,importo:x}),'number','0,00')),
-                campo('Nota',inp(af.nota,x=>saf({...af,nota:x}),'text','Caparra, saldo…')),
-                h(GB,{primary:true,onClick:()=>addAcc(e.id),st:{whiteSpace:'nowrap',minHeight:'36px'}},'+ Incasso')
-              )
-            ),
-            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',borderTop:'0.5px solid var(--border)',marginTop:'12px',paddingTop:'10px',gap:'8px',flexWrap:'wrap'}},
-              h('div',{style:{display:'flex',gap:'14px'}},
-                h('div',null,h('div',{style:{...HS,fontSize:'9px'}},'Margine'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:m>=0?'var(--pos)':'var(--neg)'}},euro(m))),
-                h('div',null,h('div',{style:{...HS,fontSize:'9px'}},'Da incassare'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:rs>0?'var(--neg)':'var(--pos)'}},euro(rs)))
-              ),
-              h('button',{onClick:v=>{v.stopPropagation();setEventi(tutti.filter(x=>x.id!==e.id));sOpen(null);},style:{background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--neg)',fontFamily:'var(--mono)',fontSize:'12px',padding:'7px 13px',cursor:'pointer'}},'Elimina evento')
+        const st=STATI_EV[e.stato]||STATI_EV.opzione,m=marg(e),rs=resid(e);
+        return h('div',{key:e.id,onClick:()=>apri(e),style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 13px 12px 10px',borderLeft:`3px solid ${st.c}`,borderBottom:'0.5px solid var(--border)',cursor:'pointer'}},
+          h('div',{style:{flex:1,minWidth:0}},
+            h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},e.nome||'(senza nome)'),
+            h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'4px',flexWrap:'wrap'}},
+              h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:st.c,border:`0.5px solid ${st.c}`,borderRadius:'12px',padding:'3px 9px'}},st.l),
+              e.data&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},FMD(e.data)),
+              e.persone>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},`${e.persone} pers.`),
+              rs>0&&e.prezzo>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--neg)'}},`da inc. ${euro(rs)}`)
             )
-          )
+          ),
+          h('div',{style:{textAlign:'right',flexShrink:0}},
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:m>=0?'var(--pos)':'var(--neg)'}},euro(m)),
+            h('div',{style:{...HS,fontSize:'9px',marginTop:'2px'}},e.prezzo>0?`margine ${margP(e).toFixed(0)}%`:'margine')
+          ),
+          h('span',{style:{color:'var(--txt3)',fontSize:'13px',flexShrink:0}},'›')
         );
-      }),
-      h('div',{style:{padding:'11px 13px',borderTop:'0.5px solid var(--border2)',display:'flex',gap:'8px',alignItems:'center'}},
-        h('input',{placeholder:'Nuovo evento…',value:nn,onChange:v=>snn(v.target.value),onKeyDown:v=>{if(v.key==='Enter')addEv();},style:{...IS,padding:'9px 10px'}}),
-        h(GB,{onClick:addEv,st:{whiteSpace:'nowrap',minHeight:'38px'}},'+ Evento')
-      )
+      })
     ),
-    h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'12px 0 20px',lineHeight:'1.6'}},'margine = prezzo meno food, personale extra e altri costi diretti · gli incassi vanno registrati anche in Entrate nel giorno in cui entrano in cassa')
+    h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'12px 0 20px',lineHeight:'1.6'}},'tocca un evento per modificarlo · gli incassi vanno registrati anche in Entrate nel giorno in cui entrano in cassa')
   );
 }
 
