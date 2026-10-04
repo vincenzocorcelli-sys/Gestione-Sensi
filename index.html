@@ -81,14 +81,15 @@ const ANNO=2026;
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
 
-const MACRO=['Costo personale','Food cost','Affitto e utenze','Spese fisse','Spese variabili'];
-const MACRO_C={'Costo personale':'#0F6E56','Food cost':'#BA7517','Affitto e utenze':'#534AB7','Spese fisse':'#5F5E5A','Spese variabili':'#993C1D'};
+const MACRO=['Costo personale','Food cost','Affitto e utenze','Spese fisse','Eventi','Spese variabili'];
+const MACRO_C={'Costo personale':'#0F6E56','Food cost':'#BA7517','Affitto e utenze':'#534AB7','Spese fisse':'#5F5E5A','Eventi':'#B5347F','Spese variabili':'#993C1D'};
 function autoMacro(nome){
   const n=nome.toLowerCase();
   if(/stipendio|personale|collaborator|straordinar|tfr|pamela/.test(n))return 'Costo personale';
   if(/materie|food|f&b|fornitor|bevand|cucina|pasti/.test(n))return 'Food cost';
   if(/affitto|utenz|acquedotto|gas|luce|acqua|minerva|adriana/.test(n))return 'Affitto e utenze';
-  if(/commercialista|software|abbonament|consulen|contabil/.test(n))return 'Spese fisse';
+  if(/event|catering|banchett|cerimoni|matrimon|private|allestiment/.test(n))return 'Eventi';
+  if(/commercialista|software|abbonament|consulen|contabil|rata|mutuo|finanziament|prestito/.test(n))return 'Spese fisse';
   return 'Spese variabili';
 }
 
@@ -284,122 +285,182 @@ function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
 }
 
 // ── Spese Fisse ──────────────────────────────────────────────
+const FMD=d=>d?`${d.slice(8,10)}/${d.slice(5,7)}`:'';
+const DAYS=(a,b)=>Math.round((new Date(a+'T00:00:00')-new Date(b+'T00:00:00'))/86400000);
+
 function SpeseFisse({mese,setMese,fisse,setFisse,debiti,setDebiti}){
   const k=String(mese);
   const [nn,snn]=useState('');
   const [open,sOpen]=useState(null);
   const [af,saf]=useState({data:tod(),importo:'',nota:''});
+  const [ord,sOrd]=useState('data');
+  const [flt,sFlt]=useState('tutte');
+
+  const shiftSc=(sc,m)=>{if(!sc)return '';const last=new Date(ANNO,m,0).getDate();const dd=Math.min(parseInt(sc.slice(8,10),10)||1,last);return `${ANNO}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;};
+
   const mkVoci=()=>{
     if(fisse[k])return fisse[k];
     const prev=[...MN].slice().reverse().find(m=>m<mese&&fisse[String(m)]);
     if(prev)return fisse[String(prev)].map(v=>{
       const accP=(v.acconti||[]).reduce((s,a)=>s+a.importo,0);
       const resP=Math.max(0,(v.importo||0)+(v.riporto||0)-accP);
-      return {...v,id:uid(),importo:0,acconti:[],pagato:false,riporto:v.pagato?0:resP,macro:v.macro||autoMacro(v.nome),debitoId:v.debitoId||''};
+      return {...v,id:uid(),importo:0,acconti:[],pagato:false,riporto:v.pagato?0:resP,macro:v.macro||autoMacro(v.nome),debitoId:v.debitoId||'',scadenza:shiftSc(v.scadenza,mese),dataPag:'',fattN:'',fattD:'',assN:'',assD:'',note:''};
     });
-    return FN.map(n=>({id:uid(),nome:n,importo:0,acconti:[],pagato:false,macro:autoMacro(n),debitoId:''}));
+    return FN.map(n=>({id:uid(),nome:n,importo:0,acconti:[],pagato:false,macro:autoMacro(n),debitoId:'',scadenza:'',dataPag:'',fattN:'',fattD:'',assN:'',assD:'',note:''}));
   };
   const upd=fn=>{const cur=mkVoci();setFisse({...fisse,[k]:fn(cur)});};
-  const norm=v=>({acconti:[],riporto:0,...v});
-  const voci=mkVoci().map(norm).sort((a,b)=>{const ma=MACRO.indexOf(a.macro||autoMacro(a.nome));const mb=MACRO.indexOf(b.macro||autoMacro(b.nome));return ma-mb;});
+  const setV=(id,patch)=>upd(c=>c.map(x=>x.id===id?{...x,...patch}:x));
+  const norm=v=>({acconti:[],riporto:0,scadenza:'',dataPag:'',fattN:'',fattD:'',assN:'',assD:'',note:'',...v});
+  const base=mkVoci().map(norm);
+
   const accTot=v=>(v.acconti||[]).reduce((s,a)=>s+a.importo,0);
   const dovuto=v=>(v.importo||0)+(v.riporto||0);
   const res=v=>Math.max(0,dovuto(v)-accTot(v));
-  const totI=voci.reduce((s,v)=>s+(v.importo||0),0);
-  const totRip=voci.reduce((s,v)=>s+(v.riporto||0),0);
-  const totA=voci.reduce((s,v)=>s+accTot(v),0);
-  const totR=voci.reduce((s,v)=>s+res(v),0);
+  const mc=v=>v.macro||autoMacro(v.nome);
+  const isPaid=v=>v.pagato||(res(v)===0&&dovuto(v)>0);
+  const stato=v=>{
+    if(isPaid(v))return{k:'pagato',l:v.dataPag?`✓ ${FMD(v.dataPag)}`:'✓ Pagato',c:'var(--pos)',bg:'rgba(15,110,86,0.12)'};
+    if(!v.scadenza)return{k:'aperto',l:'○ senza data',c:'var(--txt3)',bg:'var(--surf2)'};
+    const d=DAYS(v.scadenza,tod());
+    if(d<0)return{k:'ritardo',l:`⚠ ${-d}g in ritardo`,c:'var(--neg)',bg:'rgba(163,45,45,0.12)'};
+    if(d===0)return{k:'ritardo',l:'● scade oggi',c:'var(--neg)',bg:'rgba(163,45,45,0.12)'};
+    if(d<=7)return{k:'vicino',l:`● tra ${d}g`,c:'var(--ac)',bg:'var(--ac-bg)'};
+    return{k:'aperto',l:`○ ${FMD(v.scadenza)}`,c:'var(--txt2)',bg:'var(--surf2)'};
+  };
+
+  const totI=base.reduce((s,v)=>s+(v.importo||0),0);
+  const totRip=base.reduce((s,v)=>s+(v.riporto||0),0);
+  const totA=base.reduce((s,v)=>s+accTot(v),0);
+  const totR=base.reduce((s,v)=>s+res(v),0);
+  const nRit=base.filter(v=>stato(v).k==='ritardo').length;
+
+  const passa=v=>{const s=stato(v).k;
+    if(flt==='tutte')return true;
+    if(flt==='aperte')return !isPaid(v);
+    if(flt==='ritardo')return s==='ritardo';
+    if(flt==='pagate')return isPaid(v);
+    return true;};
+  const perData=(a,b)=>{if(!a.scadenza&&!b.scadenza)return 0;if(!a.scadenza)return 1;if(!b.scadenza)return -1;return a.scadenza.localeCompare(b.scadenza);};
+  const voci=base.filter(passa).sort(ord==='data'?perData:(a,b)=>{const d=MACRO.indexOf(mc(a))-MACRO.indexOf(mc(b));return d!==0?d:perData(a,b);});
+
   const addAcc=vId=>{
     if(!af.importo)return;
-    const imp=parseFloat(af.importo);
-    upd(c=>c.map(x=>x.id!==vId?x:{...x,acconti:[...(x.acconti||[]),{id:uid(),data:af.data,importo:imp,nota:af.nota}]}));
+    upd(c=>c.map(x=>x.id!==vId?x:{...x,acconti:[...(x.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),nota:af.nota}]}));
     saf({data:tod(),importo:'',nota:''});
   };
-  const btnSt=(saldato,pagato)=>({
-    border:`0.5px solid ${saldato||pagato?'var(--pos)':'var(--ac)'}`,
-    background:saldato||pagato?'rgba(15,110,86,0.08)':'var(--ac-bg)',
-    color:saldato||pagato?'var(--pos)':'var(--ac)',
-    padding:'5px 12px',borderRadius:'20px',
-    fontFamily:'var(--mono)',fontSize:'12px',
-    cursor:'pointer',whiteSpace:'nowrap',
-    minWidth:'90px',textAlign:'center'
-  });
+  const togglePay=v=>{
+    const np=!isPaid(v);
+    setV(v.id,{pagato:np,dataPag:np?(v.dataPag||tod()):''});
+    if(np&&v.debitoId&&v.importo>0)setDebiti(debiti.map(d=>d.id!==v.debitoId?d:{...d,residuo:Math.max(0,d.residuo-v.importo),rate:[...(d.rate||[]),{id:uid(),data:v.dataPag||tod(),importo:v.importo,nota:v.nome,src:'fisse'}]}));
+  };
+  const addVoce=()=>{if(!nn.trim())return;upd(c=>[...c,{id:uid(),nome:nn.trim(),importo:0,acconti:[],pagato:false,macro:autoMacro(nn.trim()),debitoId:'',scadenza:'',dataPag:'',fattN:'',fattD:'',assN:'',assD:'',note:'',riporto:0}]);snn('');};
+
+  const chip=(id,label,n,col)=>h('button',{key:id,onClick:()=>sFlt(id),style:{border:`0.5px solid ${flt===id?(col||'var(--ac)'):'var(--border2)'}`,background:flt===id?(col?'rgba(163,45,45,0.12)':'var(--ac-bg)'):'transparent',color:flt===id?(col||'var(--ac)'):'var(--txt2)',borderRadius:'16px',padding:'6px 11px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',whiteSpace:'nowrap',minHeight:'32px'}},n>0?`${label} ${n}`:label);
+
+  const campo=(lab,el)=>h('div',{style:{display:'flex',flexDirection:'column',gap:'3px',flex:'1 1 128px',minWidth:0}},h('span',{style:{...HS,fontSize:'9.5px'}},lab),el);
+  const inp=(val,fn,tp,ph)=>h('input',{type:tp||'text',value:val||'',placeholder:ph||'',onChange:e=>fn(e.target.value),onClick:e=>e.stopPropagation(),style:{...IS,padding:'8px 9px',fontSize:'13px'}});
+
+  const riga=v=>{
+    const st=stato(v),io=open===v.id,col=MACRO_C[mc(v)]||'var(--txt3)',rv=res(v),ac=accTot(v);
+    return h(Fragment,{key:v.id},
+      h('div',{onClick:()=>sOpen(io?null:v.id),style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 13px 11px 10px',borderLeft:`3px solid ${col}`,borderBottom:'0.5px solid var(--border)',cursor:'pointer',background:io?'var(--surf2)':'transparent'}},
+        h('div',{style:{flex:1,minWidth:0}},
+          h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},v.nome),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'4px',flexWrap:'wrap'}},
+            h('span',{onClick:e=>{e.stopPropagation();togglePay(v);},style:{fontFamily:'var(--mono)',fontSize:'11px',color:st.c,background:st.bg,border:`0.5px solid ${st.k==='aperto'?'var(--border2)':st.c}`,borderRadius:'12px',padding:'3px 9px',whiteSpace:'nowrap'}},st.l),
+            v.riporto>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--neg)'}},`↩ ${euro(v.riporto)}`),
+            ac>0&&!isPaid(v)&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--pos)'}},`acc. ${euro(ac)}`)
+          )
+        ),
+        h('div',{style:{textAlign:'right',flexShrink:0}},
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:isPaid(v)?'var(--txt3)':rv>0?'var(--neg)':'var(--txt2)'}},euro(rv>0?rv:dovuto(v))),
+          h('div',{style:{...HS,fontSize:'9px',marginTop:'2px'}},isPaid(v)?'saldato':'da pagare')
+        ),
+        h('span',{style:{color:'var(--txt3)',fontSize:'13px',flexShrink:0,transform:io?'rotate(90deg)':'none',transition:'transform 0.15s'}},'›')
+      ),
+      io&&h('div',{style:{padding:'14px 13px',background:'var(--surf2)',borderBottom:'0.5px solid var(--border)'}},
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
+          campo('Importo €',inp(v.importo||'',x=>setV(v.id,{importo:parseFloat(x)||0}),'number','0,00')),
+          campo('Scadenza',inp(v.scadenza,x=>setV(v.id,{scadenza:x}),'date')),
+          campo('Data pagamento',inp(v.dataPag,x=>setV(v.id,{dataPag:x}),'date'))
+        ),
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
+          campo('Fattura n.',inp(v.fattN,x=>setV(v.id,{fattN:x}),'text','—')),
+          campo('Data fattura',inp(v.fattD,x=>setV(v.id,{fattD:x}),'date')),
+          campo('Assegno n.',inp(v.assN,x=>setV(v.id,{assN:x}),'text','—')),
+          campo('Data assegno',inp(v.assD,x=>setV(v.id,{assD:x}),'date'))
+        ),
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
+          campo('Categoria',h('select',{value:mc(v),onClick:e=>e.stopPropagation(),onChange:e=>setV(v.id,{macro:e.target.value}),style:{...IS,padding:'8px 9px',fontSize:'13px',color:MACRO_C[mc(v)]}},MACRO.map(m=>h('option',{key:m,value:m},m)))),
+          campo('Collega a debito',h('select',{value:v.debitoId||'',onClick:e=>e.stopPropagation(),onChange:e=>setV(v.id,{debitoId:e.target.value}),style:{...IS,padding:'8px 9px',fontSize:'13px',color:v.debitoId?'var(--neg)':'var(--txt3)'}},h('option',{value:''},'Nessun debito'),debiti.map(d=>h('option',{key:d.id,value:d.id},d.cred))))
+        ),
+        h('div',{style:{marginBottom:'12px'}},campo('Note',inp(v.note,x=>setV(v.id,{note:x}),'text','Dettagli, riferimenti, accordi…'))),
+
+        h('div',{style:{borderTop:'0.5px solid var(--border)',paddingTop:'11px'}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'8px'}},
+            h('span',{style:HS},'Acconti'),
+            h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)'}},ac>0?euro(ac):'—')
+          ),
+          (v.acconti||[]).map(a=>h('div',{key:a.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 0',borderBottom:'0.5px solid var(--border)'}},
+            h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt3)',width:'52px',flexShrink:0}},FMD(a.data)),
+            h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},a.nota||'—'),
+            h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)',fontWeight:'500'}},euro(a.importo)),
+            h('button',{onClick:e=>{e.stopPropagation();upd(c=>c.map(x=>x.id!==v.id?x:{...x,acconti:(x.acconti||[]).filter(aa=>aa.id!==a.id)}));},style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'16px',padding:'0 2px 0 6px',cursor:'pointer'}},'×')
+          )),
+          h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',alignItems:'flex-end',marginTop:'9px'}},
+            campo('Data',inp(af.data,x=>saf({...af,data:x}),'date')),
+            campo('Importo €',inp(af.importo,x=>saf({...af,importo:x}),'number','0,00')),
+            campo('Nota',inp(af.nota,x=>saf({...af,nota:x}),'text','Opzionale')),
+            h(GB,{primary:true,onClick:()=>addAcc(v.id),st:{whiteSpace:'nowrap',minHeight:'36px'}},'+ Acconto')
+          )
+        ),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',borderTop:'0.5px solid var(--border)',marginTop:'12px',paddingTop:'10px'}},
+          h('div',null,
+            h('span',{style:{...HS,fontSize:'10px'}},'Residuo '),
+            h('span',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:rv>0?'var(--neg)':'var(--pos)'}},euro(rv))
+          ),
+          h('button',{onClick:e=>{e.stopPropagation();upd(c=>c.filter(x=>x.id!==v.id));sOpen(null);},style:{background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--neg)',fontFamily:'var(--mono)',fontSize:'12px',padding:'7px 13px',cursor:'pointer'}},'Elimina voce')
+        )
+      )
+    );
+  };
+
+  const lista=[];
+  if(ord==='cat'){
+    MACRO.forEach(m=>{
+      const g=voci.filter(v=>mc(v)===m);
+      if(!g.length)return;
+      const tg=g.reduce((s,v)=>s+res(v),0);
+      lista.push(h('div',{key:'h'+m,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 13px',background:'var(--surf2)',borderBottom:'0.5px solid var(--border)',borderTop:'0.5px solid var(--border2)'}},
+        h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:MACRO_C[m],letterSpacing:'0.06em',textTransform:'uppercase'}},`${m} · ${g.length}`),
+        h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:tg>0?'var(--neg)':'var(--pos)'}},euro(tg))
+      ));
+      g.forEach(v=>lista.push(riga(v)));
+    });
+  }else voci.forEach(v=>lista.push(riga(v)));
+
   return h(Pg,null,
     h(PgHdr,{title:'Spese',right:h(MS,{mese,setMese})}),
+    h('div',{style:{...card,padding:'12px 13px',marginBottom:'10px',display:'flex',justifyContent:'space-between',gap:'8px'}},
+      h('div',null,h('div',{style:{...HS,fontSize:'9.5px'}},'Dovuto'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--ac)',marginTop:'2px'}},euro(totI+totRip))),
+      h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Pagato'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--pos)',marginTop:'2px'}},totA>0?euro(totA):'—')),
+      h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Da pagare'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:totR>0?'var(--neg)':'var(--pos)',marginTop:'2px'}},euro(totR)))
+    ),
+    h('div',{style:{display:'flex',gap:'6px',overflowX:'auto',marginBottom:'8px',paddingBottom:'2px'}},
+      chip('tutte','Tutte',0),chip('aperte','Da pagare',0),chip('ritardo','In ritardo',nRit,'var(--neg)'),chip('pagate','Pagate',0)
+    ),
+    h('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},
+      h('button',{onClick:()=>sOrd('data'),style:{flex:1,border:`0.5px solid ${ord==='data'?'var(--ac)':'var(--border2)'}`,background:ord==='data'?'var(--ac-bg)':'transparent',color:ord==='data'?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},'📅 Per scadenza'),
+      h('button',{onClick:()=>sOrd('cat'),style:{flex:1,border:`0.5px solid ${ord==='cat'?'var(--ac)':'var(--border2)'}`,background:ord==='cat'?'var(--ac-bg)':'transparent',color:ord==='cat'?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},'🏷 Per categoria')
+    ),
     h('div',{style:{...card}},
-      voci.map(v=>{
-        const ac=accTot(v),rv=res(v),io=open===v.id,saldato=rv===0&&dovuto(v)>0;
-        return h(Fragment,{key:v.id},
-          h('div',{style:{padding:'12px 16px',borderBottom:'0.5px solid var(--border)'}},
-            // Riga 1: nome + pulsante elimina
-            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'10px'}},
-              h('div',null,
-                h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)'}},v.nome),
-                v.riporto>0&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--neg)',marginTop:'3px'}},`↩ ${euro(v.riporto)} non pagato dal mese scorso`)
-              ),
-              h('button',{onClick:()=>upd(c=>c.filter(x=>x.id!==v.id)),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'18px',padding:0,cursor:'pointer',lineHeight:1}},'×')
-            ),
-            // Riga 2: importo + stato allineato a destra
-            h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}},
-              h('input',{type:'number',value:v.importo||'',placeholder:'Importo €',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,importo:parseFloat(e.target.value)||0}:x)),style:{...IS,flex:1,padding:'7px 10px',fontSize:'14px'}}),
-              h('button',{onClick:()=>{const np=!(v.pagato||saldato);upd(c=>c.map(x=>x.id===v.id?{...x,pagato:np}:x));if(np&&v.debitoId&&v.importo>0){setDebiti(debiti.map(d=>d.id!==v.debitoId?d:{...d,residuo:Math.max(0,d.residuo-v.importo),rate:[...(d.rate||[]),{id:uid(),data:tod(),importo:v.importo,nota:v.nome,src:'fisse'}]}));}},style:btnSt(saldato,v.pagato)},saldato||v.pagato?'✓ Pagato':'⏳ Aperto')
-            ),
-            // Riga 3: acconto + residuo
-            (v.importo>0||v.riporto>0)&&h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
-              h('div',{style:{flex:1,display:'flex',gap:'6px',alignItems:'center'}},
-                h('span',{style:{...HS,fontSize:'10px'}},'Acconto:'),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:ac>0?'var(--pos)':'var(--txt3)',cursor:'pointer',textDecoration:'underline',textDecorationStyle:'dotted'},onClick:()=>sOpen(io?null:v.id)},ac>0?euro(ac):'+ aggiungi')
-              ),
-              h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
-                h('span',{style:{...HS,fontSize:'10px'}},'Residuo:'),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',color:saldato?'var(--pos)':rv>0?'var(--neg)':'var(--txt3)'}},euro(rv))
-              )
-            ),
-            h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}},
-              h('select',{value:v.macro||'Spese fisse',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,macro:e.target.value}:x)),style:{background:'var(--surf2)',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'3px 6px',fontFamily:'var(--mono)',fontSize:'11px',color:MACRO_C[v.macro||'Spese fisse'],flex:1,minWidth:'140px'}},
-                MACRO.map(m=>h('option',{key:m,value:m},m))
-              ),
-              h('select',{value:v.debitoId||'',onChange:e=>upd(c=>c.map(x=>x.id===v.id?{...x,debitoId:e.target.value}:x)),style:{background:'var(--surf2)',border:'0.5px solid var(--border)',borderRadius:'var(--rad)',padding:'3px 6px',fontFamily:'var(--mono)',fontSize:'11px',color:v.debitoId?'var(--neg)':'var(--txt3)',flex:1,minWidth:'120px'}},
-                h('option',{value:''},'Nessun debito'),
-                debiti.map(d=>h('option',{key:d.id,value:d.id},d.cred))
-              )
-            )
-          ),
-          io&&h('div',{style:{borderBottom:'0.5px solid var(--border)',padding:'14px 16px',background:'var(--surf2)'}},
-            h('div',{style:{...HS,marginBottom:'12px'}},'Registra acconto'),
-            h('div',{style:{display:'flex',flexDirection:'column',gap:'8px',marginBottom:(v.acconti&&v.acconti.length>0)?'14px':'0'}},
-              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-                h(FL,{label:'Data'},h('input',{type:'date',value:af.data,onChange:e=>saf({...af,data:e.target.value}),style:{...IS,width:'148px'}})),
-                h(FL,{label:'Importo €'},h('input',{type:'number',placeholder:'0,00',value:af.importo,onChange:e=>saf({...af,importo:e.target.value}),style:{...IS,width:'120px'}}))
-              ),
-              h('div',{style:{display:'flex',gap:'8px',alignItems:'flex-end'}},
-                h(FL,{label:'Nota',st:{flex:1}},h('input',{placeholder:'Descrizione',value:af.nota,onChange:e=>saf({...af,nota:e.target.value}),style:{...IS}})),
-                h(GB,{primary:true,onClick:()=>addAcc(v.id),st:{alignSelf:'flex-end',whiteSpace:'nowrap'}},'+ Acconto')
-              )
-            ),
-            v.acconti&&v.acconti.length>0&&h('div',null,
-              h('div',{style:{...HS,marginBottom:'6px'}},'Storico acconti'),
-              v.acconti.map(a=>h('div',{key:a.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:'0.5px solid var(--border)'}},
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt3)',minWidth:'85px'}},a.data),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt2)',flex:1,padding:'0 8px'}},a.nota||'—'),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)',fontWeight:'500'}},euro(a.importo)),
-                h('button',{onClick:()=>upd(c=>c.map(x=>x.id!==v.id?x:{...x,acconti:(x.acconti||[]).filter(aa=>aa.id!==a.id)})),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'14px',padding:'0 4px',cursor:'pointer',marginLeft:'6px'}},'×')
-              ))
-            )
-          )
-        );
-      }),
-      h('div',{style:{padding:'12px 16px',borderTop:'0.5px solid var(--border)',display:'flex',gap:'8px',alignItems:'center'}},
-        h('input',{placeholder:'Aggiungi voce…',value:nn,onChange:e=>snn(e.target.value),onKeyDown:e=>{if(e.key==='Enter'&&nn.trim()){upd(c=>[...c,{id:uid(),nome:nn.trim(),importo:0,acconti:[],pagato:false,macro:autoMacro(nn.trim()),debitoId:''}]);snn('');}},style:{...IS}}),
-        h(GB,{onClick:()=>{if(nn.trim()){upd(c=>[...c,{id:uid(),nome:nn.trim(),importo:0,acconti:[],pagato:false,macro:autoMacro(nn.trim()),debitoId:''}]);snn('');}}},'+ Voce')
-      ),
-      h('div',{style:{padding:'12px 16px',borderTop:'0.5px solid var(--border2)',background:'var(--surf2)',display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:'8px'}},
-        h('div',{style:{display:'flex',flexDirection:'column',gap:'2px'}},h('div',{style:HS},'Totale'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--ac)'}},euro(totI))),
-        totRip>0&&h('div',{style:{display:'flex',flexDirection:'column',gap:'2px',textAlign:'center'}},h('div',{style:HS},'Riporto'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--neg)'}},euro(totRip))),
-        h('div',{style:{display:'flex',flexDirection:'column',gap:'2px',textAlign:'center'}},h('div',{style:HS},'Acconti'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--pos)'}},totA>0?euro(totA):'—')),
-        h('div',{style:{display:'flex',flexDirection:'column',gap:'2px',textAlign:'right'}},h('div',{style:HS},'Da pagare'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:totR>0?'var(--neg)':'var(--pos)'}},euro(totR)))
+      lista.length?lista:h('div',{style:{padding:'32px 16px',textAlign:'center',color:'var(--txt3)',fontSize:'13px'}},'Nessuna voce con questo filtro'),
+      h('div',{style:{padding:'11px 13px',borderTop:'0.5px solid var(--border2)',display:'flex',gap:'8px',alignItems:'center'}},
+        h('input',{placeholder:'Aggiungi voce…',value:nn,onChange:e=>snn(e.target.value),onKeyDown:e=>{if(e.key==='Enter')addVoce();},style:{...IS,padding:'9px 10px'}}),
+        h(GB,{onClick:addVoce,st:{whiteSpace:'nowrap',minHeight:'38px'}},'+ Voce')
       )
-    )
+    ),
+    h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'12px 0 20px'}},'tocca una voce per il dettaglio · tocca lo stato per segnare pagato')
   );
 }
 
