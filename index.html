@@ -229,14 +229,25 @@ function Dashboard({mese,setMese,te,tf,tv,debiti}){
 // ── Entrate ──────────────────────────────────────────────────────
 function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
   const mob=useMobile();
-  const [f,sf]=useState({data:tod(),importo:'',nota:''});
+  const [f,sf]=useState({data:tod(),importo:'',nota:'',pasto:'giornata'});
   const [totInput,sTotInput]=useState('');
+  const [fPasto,sFPasto]=useState('tutti');
   const cm=new Date().getMonth()+1;
   const passato=mese<cm;
   const rows=entrate.filter(e=>gm(e.data)===mese).sort((a,b)=>b.data.localeCompare(a.data));
+  const pasto=e=>e.pasto||'giornata';
+  const tPranzo=rows.filter(e=>pasto(e)==='pranzo').reduce((s,e)=>s+e.importo,0);
+  const tCena=rows.filter(e=>pasto(e)==='cena').reduce((s,e)=>s+e.importo,0);
+  const tGior=rows.filter(e=>pasto(e)==='giornata').reduce((s,e)=>s+e.importo,0);
+  const nPranzo=rows.filter(e=>pasto(e)==='pranzo').length;
+  const nCena=rows.filter(e=>pasto(e)==='cena').length;
+  const pctP=(tPranzo+tCena)>0?tPranzo/(tPranzo+tCena)*100:0;
+  const visibili=fPasto==='tutti'?rows:rows.filter(e=>pasto(e)===fPasto);
+  const PC={pranzo:'#534AB7',cena:'#BA7517',giornata:'var(--txt3)'};
+  const PL={pranzo:'Pranzo',cena:'Cena',giornata:'Giornata'};
   const dailyTot=rows.reduce((s,e)=>s+e.importo,0);
   const tot=dailyTot>0?dailyTot:(passato?(precedente['m'+mese]||0):0);
-  const add=()=>{if(!f.importo)return;setEntrate([...entrate,{id:uid(),data:f.data,importo:parseFloat(f.importo),nota:f.nota}]);sf({data:tod(),importo:'',nota:''});};
+  const add=()=>{if(!f.importo)return;setEntrate([...entrate,{id:uid(),data:f.data,importo:parseFloat(f.importo),nota:f.nota,pasto:f.pasto}]);sf({data:tod(),importo:'',nota:'',pasto:f.pasto});};
   const saveTot=()=>{if(!totInput)return;setPrecedente({...precedente,['m'+mese]:parseFloat(totInput)});sTotInput('');};
   const C='165px 1fr 135px 28px';
   return h(Pg,null,
@@ -256,6 +267,9 @@ function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
     ):h(Fragment,null,
     h('div',{style:{...card,padding:'18px',marginBottom:'14px'}},
       h('div',{style:{...HS,marginBottom:'12px'}},'Nuova entrata'),
+      h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
+        ['pranzo','cena','giornata'].map(p=>h('button',{key:p,onClick:()=>sf({...f,pasto:p}),style:{flex:1,border:`0.5px solid ${f.pasto===p?PC[p]:'var(--border2)'}`,background:f.pasto===p?'var(--surf2)':'transparent',color:f.pasto===p?PC[p]:'var(--txt2)',borderRadius:'var(--rad)',padding:'9px 4px',fontFamily:'var(--mono)',fontSize:'12.5px',fontWeight:f.pasto===p?'500':'300',cursor:'pointer',minHeight:'38px'}},PL[p]))
+      ),
       h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'flex-end'}},
         h(FL,{label:'Data'},h('input',{type:'date',value:f.data,onChange:e=>sf({...f,data:e.target.value}),style:{...IS,width:'150px'}})),
         h(FL,{label:'Importo €'},h('input',{type:'number',placeholder:'0,00',value:f.importo,onChange:e=>sf({...f,importo:e.target.value}),style:{...IS,width:'130px'}})),
@@ -263,23 +277,47 @@ function Entrate({mese,setMese,entrate,setEntrate,precedente,setPrecedente}){
         h(GB,{primary:true,onClick:add,st:{alignSelf:'flex-end',whiteSpace:'nowrap'}},'+ Aggiungi')
       )
     ),
+    h('div',{style:{...card,padding:'13px 14px',marginBottom:'10px'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'11px'}},
+        h('span',{style:HS},'Incasso del mese'),
+        h('span',{style:{fontFamily:'var(--mono)',fontSize:'19px',fontWeight:'500',color:'var(--pos)'}},euro(dailyTot))
+      ),
+      h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',borderTop:'0.5px solid var(--border)',paddingTop:'10px'}},
+        h('div',null,h('div',{style:{...HS,fontSize:'9.5px',color:PC.pranzo}},`Pranzo · ${nPranzo}`),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:tPranzo>0?PC.pranzo:'var(--txt3)',marginTop:'2px'}},tPranzo>0?euro(tPranzo):'—')),
+        h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px',color:PC.cena}},`Cena · ${nCena}`),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:tCena>0?PC.cena:'var(--txt3)',marginTop:'2px'}},tCena>0?euro(tCena):'—')),
+        h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Non diviso'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--txt3)',marginTop:'2px'}},tGior>0?euro(tGior):'—'))
+      ),
+      (tPranzo+tCena)>0&&h('div',{style:{marginTop:'11px'}},
+        h('div',{style:{display:'flex',height:'7px',borderRadius:'4px',overflow:'hidden',background:'var(--surf2)'}},
+          h('div',{style:{width:`${pctP}%`,background:PC.pranzo}}),
+          h('div',{style:{width:`${100-pctP}%`,background:PC.cena}})
+        ),
+        h('div',{style:{...HS,fontSize:'9px',textAlign:'center',marginTop:'5px'}},`il pranzo vale il ${pctP.toFixed(0)}% di quanto diviso tra pranzo e cena`)
+      )
+    ),
+    h('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},
+      ['tutti','pranzo','cena'].map(p=>h('button',{key:p,onClick:()=>sFPasto(p),style:{flex:1,border:`0.5px solid ${fPasto===p?'var(--ac)':'var(--border2)'}`,background:fPasto===p?'var(--ac-bg)':'transparent',color:fPasto===p?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},p==='tutti'?'Mostra tutte':'Solo '+PL[p].toLowerCase()))
+    ),
     h('div',{style:{...card,overflowX:'auto'}},
       !mob&&h(TH,{cols:C,headers:['Data','Nota','Importo','']}),
-      rows.length===0?h('div',{style:{padding:'32px',textAlign:'center',color:'var(--txt3)',fontSize:'13px'}},'Nessuna entrata per questo mese')
-      :rows.map(e=>mob
+      visibili.length===0?h('div',{style:{padding:'32px',textAlign:'center',color:'var(--txt3)',fontSize:'13px'}},fPasto==='tutti'?'Nessuna entrata per questo mese':`Nessun incasso di ${PL[fPasto].toLowerCase()} questo mese`)
+      :visibili.map(e=>mob
         ?h(Row,{key:e.id,cols:'1fr auto 24px',del:()=>setEntrate(entrate.filter(x=>x.id!==e.id))},
           h('div',null,
-            h('div',{style:{fontSize:'13px',color:'var(--txt)'}},e.nota||'Entrata'),
-            h('div',{style:{fontSize:'11px',color:'var(--txt3)',marginTop:'2px'}},fmtG(e.data))
+            h('div',{style:{fontSize:'13px',color:'var(--txt)'}},e.nota||PL[pasto(e)]),
+            h('div',{style:{fontSize:'11px',color:'var(--txt3)',marginTop:'2px'}},
+              h('span',{style:{color:PC[pasto(e)]}},PL[pasto(e)]),' · ',fmtG(e.data))
           ),
           h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',color:'var(--pos)',fontWeight:'500'}},euro(e.importo))
         )
         :h(Row,{key:e.id,cols:C,del:()=>setEntrate(entrate.filter(x=>x.id!==e.id))},
           h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},fmtG(e.data)),
-          h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},e.nota||'+'),
+          h('div',{style:{fontSize:'13px',color:'var(--txt2)'}},
+            h('span',{style:{color:PC[pasto(e)],fontFamily:'var(--mono)',fontSize:'11px'}},PL[pasto(e)]),
+            e.nota?' · '+e.nota:''),
           h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',color:'var(--pos)',fontWeight:'500'}},euro(e.importo))
         )),
-      h(Foot,{label:'Totale mese',value:euro(tot),color:'var(--pos)'})
+      h(Foot,{label:fPasto==='tutti'?'Totale mese':`Totale ${PL[fPasto].toLowerCase()}`,value:euro(fPasto==='tutti'?tot:visibili.reduce((s,e)=>s+e.importo,0)),color:'var(--pos)'})
     )
   ));
 }
@@ -576,13 +614,14 @@ const TIPI_EV=['Laurea','Compleanno','Festa aziendale','Comunione','Altro'];
 const STATI_EV={daconf:{l:'Da confermare',c:'var(--txt3)'},confermato:{l:'Confermato',c:'var(--ac)'},acconto:{l:'Acconto',c:'var(--pos)'}};
 const MIG_ST={opzione:'daconf',confermato:'confermato',fatto:'confermato',saldato:'acconto'};
 const MIG_TP={Banchetto:'Altro',Catering:'Altro','Cena privata':'Altro',Aziendale:'Festa aziendale'};
+const METODI=['Contanti','Bonifico','Carta di credito'];
 const MAX_PDF=260000;
 
 function Eventi({mese,setMese,eventi,setEventi}){
   const [vista,sVista]=useState('cal');
   const [gSel,sGSel]=useState('');
   const [f,sF]=useState(null);
-  const [af,saf]=useState({data:tod(),importo:'',nota:''});
+  const [af,saf]=useState({data:tod(),importo:'',metodo:METODI[0],nota:''});
   const [err,sErr]=useState('');
   const [msg,sMsg]=useState('');
 
@@ -619,18 +658,24 @@ function Eventi({mese,setMese,eventi,setEventi}){
   const inp=(val,fn,tp,ph)=>h('input',{type:tp||'text',value:(val===0&&tp==='number')?'':(val||''),placeholder:ph||'',onChange:e=>fn(e.target.value),style:{...IS,padding:'9px 10px',fontSize:'14px'}});
   const ro=v=>h('div',{style:{...IS,padding:'9px 10px',fontSize:'14px',color:'var(--txt3)',background:'transparent'}},v);
 
-  const nuovo=()=>{const dft=(new Date().getMonth()+1)===mese?tod():dstr(1);sErr('');sMsg('');saf({data:tod(),importo:'',nota:''});sF({id:uid(),nome:'',data:dft,tipo:'Altro',persone:0,prezzoP:0,acconti:[],cPers:0,cAltro:0,stato:'daconf',note:'',menu:null,menuUrl:'',_new:true});};
-  const apri=e=>{sErr('');sMsg('');saf({data:tod(),importo:'',nota:''});sF({...norm(e),_new:false});};
+  const nuovo=()=>{const dft=(new Date().getMonth()+1)===mese?tod():dstr(1);sErr('');sMsg('');saf({data:tod(),importo:'',metodo:METODI[0],nota:''});sF({id:uid(),nome:'',data:dft,tipo:'Altro',persone:0,prezzoP:0,acconti:[],cPers:0,cAltro:0,stato:'daconf',note:'',menu:null,menuUrl:'',_new:true});};
+  const apri=e=>{sErr('');sMsg('');saf({data:tod(),importo:'',metodo:METODI[0],nota:''});sF({...norm(e),_new:false});};
   const sfF=p=>sF({...f,...p});
   const salva=()=>{
     if(!f.nome.trim()){sErr('Serve almeno il nome');return;}
     const {_new,...ev}=f;
+    const pend=parseFloat(af.importo);
+    if(pend>0){
+      ev.acconti=[...(ev.acconti||[]),{id:uid(),data:af.data,importo:pend,metodo:af.metodo,nota:af.nota}];
+      ev.stato='acconto';
+    }
     ev.prezzo=tot(ev);
     setEventi(_new?[...tutti,ev]:tutti.map(x=>x.id===ev.id?ev:x));
+    saf({data:tod(),importo:'',metodo:METODI[0],nota:''});
     sF(null);
   };
   const elimina=()=>{setEventi(tutti.filter(x=>x.id!==f.id));sF(null);};
-  const addAccF=()=>{if(!af.importo)return;sfF({acconti:[...(f.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),nota:af.nota}],stato:'acconto'});saf({data:tod(),importo:'',nota:''});};
+  const addAccF=()=>{if(!af.importo)return;sfF({acconti:[...(f.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),metodo:af.metodo,nota:af.nota}],stato:'acconto'});saf({data:tod(),importo:'',metodo:METODI[0],nota:''});};
 
   const caricaPdf=ev=>{
     const file=ev.target.files&&ev.target.files[0];
@@ -709,16 +754,20 @@ function Eventi({mese,setMese,eventi,setEventi}){
         ),
         (f.acconti||[]).map(a=>h('div',{key:a.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'7px 0',borderBottom:'0.5px solid var(--border)'}},
           h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt3)',width:'52px',flexShrink:0}},FMD(a.data)),
-          h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},a.nota||'—'),
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},[a.metodo,a.nota].filter(Boolean).join(' · ')||'—'),
           h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)',fontWeight:'500'}},euro(a.importo)),
           h('button',{onClick:()=>sfF({acconti:(f.acconti||[]).filter(x=>x.id!==a.id)}),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'16px',padding:'0 2px 0 6px',cursor:'pointer'}},'×')
         )),
-        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'flex-end',marginTop:'10px'}},
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'10px',marginBottom:'9px'}},
           campo('Data acconto',inp(af.data,x=>saf({...af,data:x}),'date')),
-          campo('Importo',inp(af.importo,x=>saf({...af,importo:x}),'number','0,00')),
-          campo('Nota',inp(af.nota,x=>saf({...af,nota:x}),'text','Contanti, bonifico...')),
-          h(GB,{onClick:addAccF,st:{whiteSpace:'nowrap',minHeight:'38px'}},'+ Acconto')
-        )
+          campo('Importo',inp(af.importo,x=>saf({...af,importo:x}),'number','0,00'))
+        ),
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
+          campo('Metodo di pagamento',h('select',{value:af.metodo,onChange:v=>saf({...af,metodo:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px'}},METODI.map(m=>h('option',{key:m,value:m},m)))),
+          campo('Nota',inp(af.nota,x=>saf({...af,nota:x}),'text','Opzionale'))
+        ),
+        h('button',{onClick:addAccF,style:{width:'100%',border:'none',borderRadius:'var(--rad)',background:parseFloat(af.importo)>0?'var(--ac)':'var(--surf2)',color:parseFloat(af.importo)>0?'#fff':'var(--txt3)',fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',padding:'11px',cursor:'pointer'}},'+ Aggiungi acconto'),
+        parseFloat(af.importo)>0&&h('div',{style:{...HS,fontSize:'9px',textAlign:'center',marginTop:'6px',color:'var(--ac)'}},'premi qui, oppure salva e lo registro io')
       ),
 
       msg&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--neg)',textAlign:'center',marginBottom:'9px',lineHeight:'1.5'}},msg),
