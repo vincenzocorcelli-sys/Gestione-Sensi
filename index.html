@@ -572,8 +572,11 @@ function Debiti({debiti,setDebiti}){
 }
 
 // ── Eventi ──────────────────────────────────────────────────────
-const TIPI_EV=['Banchetto','Catering','Cena privata','Aziendale','Altro'];
-const STATI_EV={opzione:{l:'Opzione',c:'var(--txt3)'},confermato:{l:'Confermato',c:'var(--ac)'},fatto:{l:'Fatto',c:'#534AB7'},saldato:{l:'Saldato',c:'var(--pos)'}};
+const TIPI_EV=['Laurea','Compleanno','Festa aziendale','Comunione','Altro'];
+const STATI_EV={daconf:{l:'Da confermare',c:'var(--txt3)'},confermato:{l:'Confermato',c:'var(--ac)'},acconto:{l:'Acconto',c:'var(--pos)'}};
+const MIG_ST={opzione:'daconf',confermato:'confermato',fatto:'confermato',saldato:'acconto'};
+const MIG_TP={Banchetto:'Altro',Catering:'Altro','Cena privata':'Altro',Aziendale:'Festa aziendale'};
+const MAX_PDF=260000;
 
 function Eventi({mese,setMese,eventi,setEventi}){
   const [vista,sVista]=useState('cal');
@@ -581,24 +584,28 @@ function Eventi({mese,setMese,eventi,setEventi}){
   const [f,sF]=useState(null);
   const [af,saf]=useState({data:tod(),importo:'',nota:''});
   const [err,sErr]=useState('');
+  const [msg,sMsg]=useState('');
 
-  const norm=e=>({tipo:TIPI_EV[0],persone:0,prezzo:0,acconti:[],cFood:0,cPers:0,cAltro:0,stato:'opzione',note:'',data:'',nome:'',...e});
+  const norm=e=>{
+    const b={tipo:'Altro',persone:0,prezzoP:0,prezzo:0,acconti:[],cPers:0,cAltro:0,stato:'daconf',note:'',data:'',nome:'',menu:null,menuUrl:'',...e};
+    if(!STATI_EV[b.stato])b.stato=MIG_ST[b.stato]||'daconf';
+    if(TIPI_EV.indexOf(b.tipo)<0)b.tipo=MIG_TP[b.tipo]||'Altro';
+    if(!b.prezzoP&&b.prezzo>0&&b.persone>0)b.prezzoP=Math.round(b.prezzo/b.persone*100)/100;
+    return b;
+  };
   const tutti=(eventi||[]).map(norm);
   const lista=tutti.filter(e=>!e.data||gm(e.data)===mese).sort((a,b)=>(a.data||'9').localeCompare(b.data||'9'));
   const listaV=gSel?lista.filter(e=>e.data===gSel):lista;
 
+  const tot=e=>(e.persone||0)*(e.prezzoP||0);
   const inc=e=>(e.acconti||[]).reduce((s,a)=>s+a.importo,0);
-  const costi=e=>(e.cFood||0)+(e.cPers||0)+(e.cAltro||0);
-  const marg=e=>(e.prezzo||0)-costi(e);
-  const margP=e=>e.prezzo>0?marg(e)/e.prezzo*100:0;
-  const resid=e=>Math.max(0,(e.prezzo||0)-inc(e));
+  const resid=e=>Math.max(0,tot(e)-inc(e));
+  const costi=e=>(e.cPers||0)+(e.cAltro||0);
 
-  const tRic=lista.reduce((s,e)=>s+(e.prezzo||0),0);
-  const tCos=lista.reduce((s,e)=>s+costi(e),0);
-  const tMar=tRic-tCos;
+  const tRic=lista.reduce((s,e)=>s+tot(e),0);
   const tInc=lista.reduce((s,e)=>s+inc(e),0);
+  const tRes=lista.reduce((s,e)=>s+resid(e),0);
   const tPers=lista.reduce((s,e)=>s+(e.persone||0),0);
-  const mp=tRic>0?tMar/tRic*100:0;
 
   const giorniMese=new Date(ANNO,mese,0).getDate();
   const primo=(new Date(ANNO,mese-1,1).getDay()+6)%7;
@@ -610,22 +617,41 @@ function Eventi({mese,setMese,eventi,setEventi}){
 
   const campo=(lab,el,fx)=>h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',flex:fx||'1 1 130px',minWidth:0}},h('span',{style:{...HS,fontSize:'9.5px'}},lab),el);
   const inp=(val,fn,tp,ph)=>h('input',{type:tp||'text',value:(val===0&&tp==='number')?'':(val||''),placeholder:ph||'',onChange:e=>fn(e.target.value),style:{...IS,padding:'9px 10px',fontSize:'14px'}});
+  const ro=v=>h('div',{style:{...IS,padding:'9px 10px',fontSize:'14px',color:'var(--txt3)',background:'transparent'}},v);
 
-  // ── Form nuovo / modifica ──
-  const nuovo=()=>{const dft=(new Date().getMonth()+1)===mese?tod():dstr(1);sErr('');saf({data:tod(),importo:'',nota:''});sF({id:uid(),nome:'',data:dft,tipo:TIPI_EV[0],persone:0,prezzo:0,acconti:[],cFood:0,cPers:0,cAltro:0,stato:'opzione',note:'',_new:true});};
-  const apri=e=>{sErr('');saf({data:tod(),importo:'',nota:''});sF({...norm(e),_new:false});};
+  const nuovo=()=>{const dft=(new Date().getMonth()+1)===mese?tod():dstr(1);sErr('');sMsg('');saf({data:tod(),importo:'',nota:''});sF({id:uid(),nome:'',data:dft,tipo:'Altro',persone:0,prezzoP:0,acconti:[],cPers:0,cAltro:0,stato:'daconf',note:'',menu:null,menuUrl:'',_new:true});};
+  const apri=e=>{sErr('');sMsg('');saf({data:tod(),importo:'',nota:''});sF({...norm(e),_new:false});};
   const sfF=p=>sF({...f,...p});
   const salva=()=>{
     if(!f.nome.trim()){sErr('Serve almeno il nome');return;}
     const {_new,...ev}=f;
+    ev.prezzo=tot(ev);
     setEventi(_new?[...tutti,ev]:tutti.map(x=>x.id===ev.id?ev:x));
     sF(null);
   };
   const elimina=()=>{setEventi(tutti.filter(x=>x.id!==f.id));sF(null);};
-  const addAccF=()=>{if(!af.importo)return;sfF({acconti:[...(f.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),nota:af.nota}]});saf({data:tod(),importo:'',nota:''});};
+  const addAccF=()=>{if(!af.importo)return;sfF({acconti:[...(f.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),nota:af.nota}],stato:'acconto'});saf({data:tod(),importo:'',nota:''});};
+
+  const caricaPdf=ev=>{
+    const file=ev.target.files&&ev.target.files[0];
+    if(!file)return;
+    if(file.type!=='application/pdf'){sMsg('Il file deve essere un PDF');return;}
+    if(file.size>MAX_PDF){sMsg(`PDF troppo pesante (${Math.round(file.size/1024)} KB, massimo ${Math.round(MAX_PDF/1024)} KB). Usa il campo link qui sotto.`);return;}
+    const r=new FileReader();
+    r.onload=()=>{sMsg('');sfF({menu:{nome:file.name,size:file.size,data:r.result}});};
+    r.onerror=()=>sMsg('Errore nella lettura del file');
+    r.readAsDataURL(file);
+  };
+  const apriPdf=m=>{
+    try{
+      const b=atob(m.data.split(',')[1]);const u=new Uint8Array(b.length);
+      for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
+      window.open(URL.createObjectURL(new Blob([u],{type:'application/pdf'})),'_blank');
+    }catch(x){sMsg('Impossibile aprire il PDF');}
+  };
 
   if(f){
-    const st=STATI_EV[f.stato]||STATI_EV.opzione,m=marg(f),rs=resid(f);
+    const st=STATI_EV[f.stato]||STATI_EV.daconf,T=tot(f),I=inc(f),R=resid(f);
     return h(Pg,null,
       h(PgHdr,{title:f._new?'Nuovo evento':'Modifica evento',right:h('button',{onClick:()=>sF(null),style:{background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--txt2)',fontFamily:'var(--mono)',fontSize:'12px',padding:'8px 14px',cursor:'pointer',minHeight:'36px'}},'Annulla')}),
 
@@ -634,36 +660,52 @@ function Eventi({mese,setMese,eventi,setEventi}){
           campo('Tipo di evento',h('select',{value:f.tipo,onChange:v=>sfF({tipo:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px'}},TIPI_EV.map(t=>h('option',{key:t,value:t},t)))),
           campo('Stato',h('select',{value:f.stato,onChange:v=>sfF({stato:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px',color:st.c}},Object.keys(STATI_EV).map(s=>h('option',{key:s,value:s},STATI_EV[s].l))))
         ),
-        h('div',{style:{marginBottom:'11px'}},campo('Nome / cliente',inp(f.nome,x=>{sErr('');sfF({nome:x});},'text','Matrimonio Rossi, Cena aziendale...'),'1 1 100%')),
-        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+        h('div',{style:{marginBottom:'11px'}},campo('Nome / cliente',inp(f.nome,x=>{sErr('');sfF({nome:x});},'text','Laurea Bianchi, 18 anni Sara...'),'1 1 100%')),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap'}},
           campo('Data',inp(f.data,x=>sfF({data:x}),'date')),
           campo('Partecipanti',inp(f.persone,x=>sfF({persone:parseInt(x,10)||0}),'number','0'))
-        ),
-        h('div',null,campo('Note',h('textarea',{value:f.note||'',placeholder:'Menu, orari, referente, accordi...',onChange:v=>sfF({note:v.target.value}),rows:3,style:{...IS,padding:'9px 10px',fontSize:'14px',resize:'vertical',lineHeight:'1.5'}}),'1 1 100%'))
-      ),
-
-      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
-        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Economia dell evento'),
-        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
-          campo('Prezzo totale',inp(f.prezzo,x=>sfF({prezzo:parseFloat(x)||0}),'number','0,00')),
-          campo('A persona',h('div',{style:{...IS,padding:'9px 10px',fontSize:'14px',color:'var(--txt3)',background:'transparent'}},f.persone>0?euro(f.prezzo/f.persone):'—'))
-        ),
-        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
-          campo('Costo food',inp(f.cFood,x=>sfF({cFood:parseFloat(x)||0}),'number','0,00')),
-          campo('Personale extra',inp(f.cPers,x=>sfF({cPers:parseFloat(x)||0}),'number','0,00')),
-          campo('Altri costi',inp(f.cAltro,x=>sfF({cAltro:parseFloat(x)||0}),'number','0,00'))
-        ),
-        h('div',{style:{display:'flex',justifyContent:'space-between',borderTop:'0.5px solid var(--border)',paddingTop:'10px'}},
-          h('div',null,h('div',{style:{...HS,fontSize:'9px'}},'Margine'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:m>=0?'var(--pos)':'var(--neg)',marginTop:'2px'}},euro(m))),
-          h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9px'}},'Margine %'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:margP(f)>=50?'var(--pos)':margP(f)>=35?'var(--ac)':'var(--neg)',marginTop:'2px'}},f.prezzo>0?margP(f).toFixed(0)+'%':'—')),
-          h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9px'}},'Da incassare'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:rs>0?'var(--neg)':'var(--pos)',marginTop:'2px'}},euro(rs)))
         )
       ),
 
-      h('div',{style:{...card,padding:'15px 14px',marginBottom:'14px'}},
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'12px'}},
+          campo('Prezzo a persona',inp(f.prezzoP,x=>sfF({prezzoP:parseFloat(x)||0}),'number','0,00')),
+          campo('Totale evento',ro(T>0?euro(T):'—'))
+        ),
+        h('div',{style:{display:'flex',justifyContent:'space-between',borderTop:'0.5px solid var(--border)',paddingTop:'11px'}},
+          h('div',null,h('div',{style:{...HS,fontSize:'9px'}},'Totale'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:'var(--txt)',marginTop:'2px'}},euro(T))),
+          h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9px'}},'Acconti'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:'var(--pos)',marginTop:'2px'}},I>0?euro(I):'—')),
+          h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9px'}},'Da incassare'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:'500',color:R>0?'var(--neg)':'var(--pos)',marginTop:'2px'}},euro(R)))
+        )
+      ),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Menu'),
+        f.menu?h('div',{style:{display:'flex',alignItems:'center',gap:'9px',padding:'10px',background:'var(--surf2)',borderRadius:'var(--rad)',marginBottom:'9px'}},
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'12.5px',color:'var(--txt2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},`${f.menu.nome} · ${Math.round(f.menu.size/1024)} KB`),
+          h('button',{onClick:()=>apriPdf(f.menu),style:{background:'none',border:'0.5px solid var(--ac)',borderRadius:'var(--rad)',color:'var(--ac)',fontFamily:'var(--mono)',fontSize:'11.5px',padding:'6px 11px',cursor:'pointer'}},'Apri'),
+          h('button',{onClick:()=>sfF({menu:null}),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'17px',padding:'0 3px',cursor:'pointer'}},'×')
+        ):h('label',{style:{display:'block',border:'0.5px dashed var(--border2)',borderRadius:'var(--rad)',padding:'13px',textAlign:'center',color:'var(--ac)',fontFamily:'var(--mono)',fontSize:'12.5px',cursor:'pointer',marginBottom:'9px'}},
+          'Carica il menu in PDF',
+          h('input',{type:'file',accept:'application/pdf',onChange:caricaPdf,style:{display:'none'}})
+        ),
+        campo('Oppure link al menu',inp(f.menuUrl,x=>sfF({menuUrl:x}),'text','https://...'),'1 1 100%'),
+        f.menuUrl&&h('a',{href:f.menuUrl,target:'_blank',style:{display:'inline-block',marginTop:'7px',fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--ac)'}},'Apri il link')
+      ),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Costi diretti, food escluso'),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'10px'}},
+          campo('Personale extra',inp(f.cPers,x=>sfF({cPers:parseFloat(x)||0}),'number','0,00')),
+          campo('Altri costi',inp(f.cAltro,x=>sfF({cAltro:parseFloat(x)||0}),'number','0,00'))
+        ),
+        h('div',null,campo('Note',h('textarea',{value:f.note||'',placeholder:'Orari, referente, allergie, accordi...',onChange:v=>sfF({note:v.target.value}),rows:3,style:{...IS,padding:'9px 10px',fontSize:'14px',resize:'vertical',lineHeight:'1.5'}}),'1 1 100%'))
+      ),
+
+      !f._new&&h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
         h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'9px'}},
-          h('span',{style:{...HS,fontSize:'9.5px'}},'Caparre e saldi'),
-          h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)'}},inc(f)>0?euro(inc(f)):'—')
+          h('span',{style:{...HS,fontSize:'9.5px'}},'Acconti'),
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--pos)'}},I>0?euro(I):'—')
         ),
         (f.acconti||[]).map(a=>h('div',{key:a.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'7px 0',borderBottom:'0.5px solid var(--border)'}},
           h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt3)',width:'52px',flexShrink:0}},FMD(a.data)),
@@ -672,20 +714,21 @@ function Eventi({mese,setMese,eventi,setEventi}){
           h('button',{onClick:()=>sfF({acconti:(f.acconti||[]).filter(x=>x.id!==a.id)}),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'16px',padding:'0 2px 0 6px',cursor:'pointer'}},'×')
         )),
         h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'flex-end',marginTop:'10px'}},
-          campo('Data',inp(af.data,x=>saf({...af,data:x}),'date')),
+          campo('Data acconto',inp(af.data,x=>saf({...af,data:x}),'date')),
           campo('Importo',inp(af.importo,x=>saf({...af,importo:x}),'number','0,00')),
-          campo('Nota',inp(af.nota,x=>saf({...af,nota:x}),'text','Caparra, saldo...')),
-          h(GB,{onClick:addAccF,st:{whiteSpace:'nowrap',minHeight:'38px'}},'+ Incasso')
+          campo('Nota',inp(af.nota,x=>saf({...af,nota:x}),'text','Contanti, bonifico...')),
+          h(GB,{onClick:addAccF,st:{whiteSpace:'nowrap',minHeight:'38px'}},'+ Acconto')
         )
       ),
 
+      msg&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--neg)',textAlign:'center',marginBottom:'9px',lineHeight:'1.5'}},msg),
       err&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--neg)',textAlign:'center',marginBottom:'10px'}},err),
       h('button',{onClick:salva,style:{width:'100%',border:'none',borderRadius:'var(--rad)',background:'var(--ac)',color:'#fff',fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',padding:'14px',cursor:'pointer',marginBottom:'10px'}},'Salva evento'),
-      !f._new&&h('button',{onClick:elimina,style:{width:'100%',background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--neg)',fontFamily:'var(--mono)',fontSize:'13px',padding:'11px',cursor:'pointer',marginBottom:'24px'}},'Elimina evento')
+      !f._new&&h('button',{onClick:elimina,style:{width:'100%',background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--neg)',fontFamily:'var(--mono)',fontSize:'13px',padding:'11px',cursor:'pointer',marginBottom:'24px'}},'Elimina evento'),
+      f._new&&h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'0 0 24px'}},'gli acconti si registrano dopo aver salvato')
     );
   }
 
-  // ── Vista calendario / elenco ──
   return h(Pg,null,
     h(PgHdr,{title:'Eventi',right:h(MS,{mese,setMese})}),
 
@@ -694,13 +737,12 @@ function Eventi({mese,setMese,eventi,setEventi}){
     h('div',{style:{...card,padding:'12px 13px',marginBottom:'10px'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',marginBottom:'10px'}},
         h('div',null,h('div',{style:{...HS,fontSize:'9.5px'}},`Eventi · ${tPers} pers.`),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--txt)',marginTop:'2px'}},lista.length)),
-        h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Ricavo'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--pos)',marginTop:'2px'}},euro(tRic))),
-        h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Costi'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--ac)',marginTop:'2px'}},euro(tCos)))
+        h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Totale'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--txt)',marginTop:'2px'}},euro(tRic))),
+        h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Acconti'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',color:'var(--pos)',marginTop:'2px'}},tInc>0?euro(tInc):'—'))
       ),
-      h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',borderTop:'0.5px solid var(--border)',paddingTop:'9px'}},
-        h('div',null,h('div',{style:{...HS,fontSize:'9.5px'}},'Margine'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:tMar>=0?'var(--pos)':'var(--neg)',marginTop:'2px'}},euro(tMar))),
-        h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Margine %'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:mp>=50?'var(--pos)':mp>=35?'var(--ac)':'var(--neg)',marginTop:'2px'}},tRic>0?mp.toFixed(0)+'%':'—')),
-        h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Incassato'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:'var(--pos)',marginTop:'2px'}},tInc>0?euro(tInc):'—'))
+      h('div',{style:{borderTop:'0.5px solid var(--border)',paddingTop:'9px',display:'flex',justifyContent:'space-between',alignItems:'baseline'}},
+        h('span',{style:{...HS,fontSize:'9.5px'}},'Totale da incassare'),
+        h('span',{style:{fontFamily:'var(--mono)',fontSize:'19px',fontWeight:'500',color:tRes>0?'var(--neg)':'var(--pos)'}},euro(tRes))
       )
     ),
 
@@ -720,7 +762,7 @@ function Eventi({mese,setMese,eventi,setEventi}){
           return h('button',{key:d,onClick:()=>sGSel(sel?'':ds),style:{border:`0.5px solid ${sel?'var(--ac)':oggi?'var(--border2)':'transparent'}`,background:sel?'var(--ac-bg)':ev.length?'var(--surf2)':'transparent',borderRadius:'var(--rad)',minHeight:'44px',padding:'4px 2px 3px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',gap:'3px'}},
             h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:sel?'var(--ac)':oggi?'var(--txt)':ev.length?'var(--txt)':'var(--txt3)',fontWeight:oggi||ev.length?'500':'300'}},d),
             h('span',{style:{display:'flex',gap:'2px',justifyContent:'center',flexWrap:'wrap'}},
-              ev.slice(0,3).map(e=>h('span',{key:e.id,style:{width:'5px',height:'5px',borderRadius:'50%',background:(STATI_EV[e.stato]||STATI_EV.opzione).c,display:'block'}}))
+              ev.slice(0,3).map(e=>h('span',{key:e.id,style:{width:'5px',height:'5px',borderRadius:'50%',background:(STATI_EV[e.stato]||STATI_EV.daconf).c,display:'block'}}))
             )
           );
         })
@@ -734,20 +776,21 @@ function Eventi({mese,setMese,eventi,setEventi}){
     h('div',{style:{...card}},
       listaV.length===0&&h('div',{style:{padding:'32px 16px',textAlign:'center',color:'var(--txt3)',fontSize:'13px'}},gSel?'Nessun evento in questo giorno':'Nessun evento questo mese'),
       listaV.map(e=>{
-        const st=STATI_EV[e.stato]||STATI_EV.opzione,m=marg(e),rs=resid(e);
+        const st=STATI_EV[e.stato]||STATI_EV.daconf,R=resid(e),T=tot(e);
         return h('div',{key:e.id,onClick:()=>apri(e),style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 13px 12px 10px',borderLeft:`3px solid ${st.c}`,borderBottom:'0.5px solid var(--border)',cursor:'pointer'}},
           h('div',{style:{flex:1,minWidth:0}},
             h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},e.nome||'(senza nome)'),
             h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'4px',flexWrap:'wrap'}},
               h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:st.c,border:`0.5px solid ${st.c}`,borderRadius:'12px',padding:'3px 9px'}},st.l),
               e.data&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},FMD(e.data)),
+              h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},e.tipo),
               e.persone>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},`${e.persone} pers.`),
-              rs>0&&e.prezzo>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--neg)'}},`da inc. ${euro(rs)}`)
+              (e.menu||e.menuUrl)&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--ac)'}},'menu')
             )
           ),
           h('div',{style:{textAlign:'right',flexShrink:0}},
-            h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:m>=0?'var(--pos)':'var(--neg)'}},euro(m)),
-            h('div',{style:{...HS,fontSize:'9px',marginTop:'2px'}},e.prezzo>0?`margine ${margP(e).toFixed(0)}%`:'margine')
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:R>0?'var(--neg)':'var(--pos)'}},euro(R)),
+            h('div',{style:{...HS,fontSize:'9px',marginTop:'2px'}},R>0?`da incassare su ${euro(T)}`:'saldato')
           ),
           h('span',{style:{color:'var(--txt3)',fontSize:'13px',flexShrink:0}},'›')
         );
