@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Sensi — Gestione Economica 2026</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Mono:wght@300;400&display=swap');
@@ -57,7 +60,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 <script>
 // 1. Crea un account gratuito su https://jsonbin.io
 // 2. Vai su "API Keys" → copia la Master Key → incollala qui:
-const JSONBIN_KEY = '$2a$10$M0Z5DD3w34pJSTSL24DR2ueuKWmvlgVi4ijNgH8oKA8tuM.8G0qhG';
+const JSONBIN_KEY = '$2a$10$BzcbfqGKZoc2dFbXQZ0iuu69sxSkQ1H6VvnJ8s8MGzjD.m/pRMvXS';
 
 // 3. Prima volta: lascia BIN_ID vuoto. L'app crea il bin
 //    e ti mostra l'ID. Poi inseriscilo qui e rideploya.
@@ -78,6 +81,7 @@ const {createRoot}=ReactDOM;
 const MESI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
+const VERS='14.10b';
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
 
@@ -125,7 +129,7 @@ async function jbLoad(){
   const bid=getBinId();
   if(!bid)return null;
   try{
-    const r=await fetch(`${JB}/${bid}/latest`,{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'}});
+    const r=await fetch(`${JB}/${bid}/latest`,{headers:{'X-Access-Key':JSONBIN_KEY,'X-Bin-Meta':'false'}});
     if(!r.ok){
       const cached=localStorage.getItem('sensi_cache');
       return cached?JSON.parse(cached):null;
@@ -144,14 +148,14 @@ async function jbSave(data){
   let bid=getBinId();
   if(!bid){
     // Crea nuovo bin
-    const r=await fetch(JB,{method:'POST',headers:{'X-Master-Key':JSONBIN_KEY,'Content-Type':'application/json','X-Bin-Name':'sensi-2026','X-Bin-Private':'true'},body:JSON.stringify(data)});
+    const r=await fetch(JB,{method:'POST',headers:{'X-Access-Key':JSONBIN_KEY,'Content-Type':'application/json','X-Bin-Name':'sensi-2026','X-Bin-Private':'true'},body:JSON.stringify(data)});
     if(!r.ok)throw new Error('Errore creazione bin');
     const res=await r.json();
     bid=res.metadata.id;
     localStorage.setItem('sensi_bin_id',bid);
     return bid;
   }else{
-    await fetch(`${JB}/${bid}`,{method:'PUT',headers:{'X-Master-Key':JSONBIN_KEY,'Content-Type':'application/json'},body:JSON.stringify(data)});
+    await fetch(`${JB}/${bid}`,{method:'PUT',headers:{'X-Access-Key':JSONBIN_KEY,'Content-Type':'application/json'},body:JSON.stringify(data)});
     return bid;
   }
 }
@@ -1320,7 +1324,7 @@ function App(){
         h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0 10px'}},
           h('div',{style:{display:'flex',alignItems:'baseline',gap:'10px'}},
             h('span',{style:{fontFamily:'var(--pf)',fontSize:'20px',fontWeight:'500',color:'var(--ac)'}},'Sensi'),
-            h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em'}},`gestione economica ${ANNO}`)
+            h('span',{onClick:()=>{window.location.href=window.location.pathname+'?v='+Date.now();},style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em',cursor:'pointer'}},`gestione economica ${ANNO} · v${VERS}`)
           ),
           h('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
             syncing&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'Salvataggio…'),
