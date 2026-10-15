@@ -81,7 +81,7 @@ const {createRoot}=ReactDOM;
 const MESI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
-const VERS='14.10b';
+const VERS='14.10c';
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
 
@@ -97,7 +97,7 @@ function autoMacro(nome){
   return 'Spese variabili';
 }
 
-const EMPTY={entrate:[],fisse:{},variabili:[],debiti:[],eventi:[],precedente:{}};
+const EMPTY={entrate:[],fisse:{},variabili:[],debiti:[],eventi:[],obiettivi:{},precedente:{}};
 const JB='https://api.jsonbin.io/v3/b';
 
 // ── Helpers generici ─────────────────────────────────────────────
@@ -885,6 +885,145 @@ function Eventi({mese,setMese,eventi,setEventi}){
   );
 }
 
+// ── Obiettivi ───────────────────────────────────────────────────
+// peso di un giorno nella settimana. getDay: 0=Dom 1=Lun ... 6=Sab
+// Lunedi chiuso. Mar-Gio valgono il 30% della settimana, Ven-Dom il 70%.
+const PESO_G=[70/3,0,30/3,30/3,30/3,70/3,70/3];
+const NOMI_G=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+
+function Obiettivi({mese,setMese,entrate,obiettivi,setObiettivi,precedente,te}){
+  const [tmp,sTmp]=useState('');
+  const [edit,sEdit]=useState(false);
+  const [apri,sApri]=useState('');
+
+  const key=String(mese);
+  const obj=obiettivi[key]||0;
+  const annoPrec=precedente[key]||0;
+  const cm=new Date().getMonth()+1;
+  const oggi=tod();
+
+  const gg=new Date(ANNO,mese,0).getDate();
+  const giorni=[];
+  for(let d=1;d<=gg;d++){
+    const ds=`${ANNO}-${String(mese).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dw=new Date(ds+'T00:00:00').getDay();
+    giorni.push({d,ds,dw,peso:PESO_G[dw]});
+  }
+  const pesoTot=giorni.reduce((s,g)=>s+g.peso,0);
+  const targetG=g=>pesoTot>0?obj*g.peso/pesoTot:0;
+
+  const incG=ds=>entrate.filter(e=>e.data===ds).reduce((s,e)=>s+e.importo,0);
+  const incMese=te(mese);
+  const haGiorni=entrate.some(e=>gm(e.data)===mese);
+
+  // raggruppo per settimana, lunedi come primo giorno
+  const lunDi=ds=>{const dt=new Date(ds+'T00:00:00');const sh=(dt.getDay()+6)%7;dt.setDate(dt.getDate()-sh);return dt.toISOString().slice(0,10);};
+  const sett=[];
+  giorni.forEach(g=>{
+    const k=lunDi(g.ds);
+    let w=sett.find(x=>x.k===k);
+    if(!w){w={k,gg:[]};sett.push(w);}
+    w.gg.push(g);
+  });
+  sett.forEach((w,i)=>{
+    w.n=i+1;
+    w.target=w.gg.reduce((s,g)=>s+targetG(g),0);
+    w.inc=w.gg.reduce((s,g)=>s+incG(g.ds),0);
+    const inf=w.gg.filter(g=>g.dw>=2&&g.dw<=4);
+    const wknd=w.gg.filter(g=>g.dw===5||g.dw===6||g.dw===0);
+    w.infT=inf.reduce((s,g)=>s+targetG(g),0);
+    w.infI=inf.reduce((s,g)=>s+incG(g.ds),0);
+    w.wkT=wknd.reduce((s,g)=>s+targetG(g),0);
+    w.wkI=wknd.reduce((s,g)=>s+incG(g.ds),0);
+    w.dal=w.gg[0].d; w.al=w.gg[w.gg.length-1].d;
+    w.passata=w.gg[w.gg.length-1].ds<oggi;
+    w.corrente=w.gg[0].ds<=oggi&&w.gg[w.gg.length-1].ds>=oggi;
+  });
+
+  const diff=incMese-obj;
+  const pct=obj>0?incMese/obj*100:0;
+  const col=p=>p>=100?'var(--pos)':p>=80?'var(--ac)':'var(--neg)';
+  // ritmo necessario sui giorni di apertura che restano
+  const restanti=giorni.filter(g=>g.peso>0&&g.ds>=oggi);
+  const pesoRest=restanti.reduce((s,g)=>s+g.peso,0);
+  const mancano=Math.max(0,obj-incMese);
+  const perGiorno=restanti.length>0?mancano/restanti.length:0;
+
+  const salva=()=>{const v=parseFloat(tmp);setObiettivi({...obiettivi,[key]:isNaN(v)?0:v});sTmp('');sEdit(false);};
+  const barra=(v,t,c)=>h('div',{style:{height:'6px',background:'var(--surf2)',borderRadius:'3px',overflow:'hidden'}},
+    h('div',{style:{height:'100%',width:`${t>0?Math.min(v/t*100,100):0}%`,background:c,transition:'width 0.4s'}}));
+
+  return h(Pg,null,
+    h(PgHdr,{title:'Obiettivi',right:h(MS,{mese,setMese})}),
+
+    h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+      obj===0&&!edit?h('div',null,
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Nessun obiettivo per questo mese'),
+        annoPrec>0&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt2)',marginBottom:'11px'}},`${ANNO-1} in questo mese ${euro(annoPrec)}`),
+        h('button',{onClick:()=>{sTmp(annoPrec>0?String(annoPrec):'');sEdit(true);},style:{width:'100%',border:'none',borderRadius:'var(--rad)',background:'var(--ac)',color:'#fff',fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',padding:'12px',cursor:'pointer'}},'Imposta obiettivo')
+      ):edit?h('div',null,
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'7px'}},`Obiettivo di incasso · ${MESI[mese-1]}`),
+        annoPrec>0&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt3)',marginBottom:'8px'}},`${ANNO-1} ${euro(annoPrec)}`),
+        h('input',{type:'number',placeholder:'0,00',value:tmp,onChange:e=>sTmp(e.target.value),style:{...IS,padding:'11px',fontSize:'17px',marginBottom:'9px'}}),
+        h('div',{style:{display:'flex',gap:'8px'}},
+          h('button',{onClick:salva,style:{flex:2,border:'none',borderRadius:'var(--rad)',background:'var(--ac)',color:'#fff',fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',padding:'11px',cursor:'pointer'}},'Salva'),
+          h('button',{onClick:()=>{sEdit(false);sTmp('');},style:{flex:1,background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--txt2)',fontFamily:'var(--mono)',fontSize:'13px',padding:'11px',cursor:'pointer'}},'Annulla')
+        )
+      ):h('div',null,
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'4px'}},
+          h('span',{style:{...HS,fontSize:'9.5px'}},'Obiettivo del mese'),
+          h('span',{onClick:()=>{sTmp(String(obj));sEdit(true);},style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--ac)',cursor:'pointer',textDecoration:'underline',textDecorationStyle:'dotted'}},'modifica')
+        ),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'10px'}},
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'22px',fontWeight:'500',color:'var(--txt)'}},euro(obj)),
+          h('span',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:col(pct)}},`${pct.toFixed(0)}%`)
+        ),
+        barra(incMese,obj,col(pct)),
+        h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',marginTop:'11px',paddingTop:'10px',borderTop:'0.5px solid var(--border)'}},
+          h('div',null,h('div',{style:{...HS,fontSize:'9px'}},'Incassato'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:'var(--pos)',marginTop:'2px'}},euro(incMese))),
+          h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9px'}},diff>=0?'Sopra':'Mancano'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:diff>=0?'var(--pos)':'var(--neg)',marginTop:'2px'}},euro(Math.abs(diff)))),
+          h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9px'}},`Restano ${restanti.length} aperture`),h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:'var(--txt2)',marginTop:'2px'}},mese===cm&&restanti.length>0?euro(perGiorno)+'/g':'—'))
+        )
+      )
+    ),
+
+    obj>0&&!edit&&h(Fragment,null,
+      h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'7px',paddingLeft:'2px'}},'Settimana per settimana'),
+      h('div',{style:{...card,marginBottom:'10px'}},
+        sett.map(w=>{
+          const io=apri===w.k,p=w.target>0?w.inc/w.target*100:0;
+          return h(Fragment,{key:w.k},
+            h('div',{onClick:()=>sApri(io?'':w.k),style:{padding:'12px 14px',borderBottom:'0.5px solid var(--border)',cursor:'pointer',background:io?'var(--surf2)':w.corrente?'var(--ac-bg)':'transparent'}},
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'7px'}},
+                h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:w.corrente?'var(--ac)':'var(--txt)'}},`Sett. ${w.n} · ${w.dal}-${w.al} ${MESI[mese-1].slice(0,3).toLowerCase()}${w.corrente?' •':''}`),
+                h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',color:w.inc>0||w.passata?col(p):'var(--txt3)'}},`${euro(w.inc)} / ${euro(w.target)}`)
+              ),
+              barra(w.inc,w.target,w.inc>0||w.passata?col(p):'var(--border2)'),
+              h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px'}},
+                h('span',{style:{fontFamily:'var(--mono)',fontSize:'10px',color:'var(--txt3)'}},`Mar-Gio ${euro(w.infT)} · Ven-Dom ${euro(w.wkT)}`),
+                h('span',{style:{color:'var(--txt3)',fontSize:'11px'}},io?'chiudi':'giorni')
+              )
+            ),
+            io&&h('div',{style:{background:'var(--surf2)',borderBottom:'0.5px solid var(--border)',padding:'4px 14px 11px'}},
+              w.gg.map(g=>{
+                const t=targetG(g),i=incG(g.ds),chiuso=g.peso===0;
+                return h('div',{key:g.ds,style:{display:'flex',alignItems:'center',gap:'9px',padding:'7px 0',borderBottom:'0.5px solid var(--border)'}},
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--txt3)',width:'58px',flexShrink:0}},`${NOMI_G[g.dw]} ${g.d}`),
+                  h('span',{style:{flex:1,minWidth:0}},chiuso?h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'chiuso'):barra(i,t,i>0?col(t>0?i/t*100:0):'var(--border2)')),
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'11.5px',color:i>0?'var(--pos)':'var(--txt3)',width:'72px',textAlign:'right',flexShrink:0}},chiuso?'—':i>0?euro(i):'—'),
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',width:'72px',textAlign:'right',flexShrink:0}},chiuso?'':euro(t))
+                );
+              })
+            )
+          );
+        })
+      ),
+      !haGiorni&&h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'0 0 10px',lineHeight:'1.6'}},'per questo mese non ci sono incassi giornalieri, il confronto settimanale resta vuoto'),
+      h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'4px 0 20px',lineHeight:'1.6'}},'lunedi chiuso · da martedi a giovedi il 30% della settimana · da venerdi a domenica il 70%')
+    )
+  );
+}
+
 // ── Panoramica ───────────────────────────────────────────────────
 function Panoramica({te,tf,tv,precedente,setPrecedente}){
   const [edit,sEdit]=useState(false);
@@ -1287,14 +1426,15 @@ function App(){
   const setDebiti=v=>{const nd={...data,debiti:v};sData(nd);save(nd);};
   const setPrecedente=v=>{const nd={...data,precedente:v};sData(nd);save(nd);};
   const setEventi=v=>{const nd={...data,eventi:v};sData(nd);save(nd);};
+  const setObiettivi=v=>{const nd={...data,obiettivi:v};sData(nd);save(nd);};
 
   const cm2=new Date().getMonth()+1;
   const te=m=>{const d=data.entrate.filter(e=>gm(e.data)===m).reduce((s,e)=>s+e.importo,0);return d>0?d:(m<cm2?(data.precedente['m'+m]||0):0);};
   const tf=m=>(data.fisse[String(m)]||[]).reduce((s,v)=>s+(v.importo||0),0);
   const tv=m=>data.variabili.filter(v=>gm(v.data)===m).reduce((s,v)=>s+v.importo,0);
 
-  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'eventi',l:'Eventi'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'report',l:'Report'},{id:'assistente',l:'✦ Assistente'}];
-  const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,eventi:data.eventi||[],setEventi,precedente:data.precedente,setPrecedente,te,tf,tv};
+  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'eventi',l:'Eventi'},{id:'obiettivi',l:'Obiettivi'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'report',l:'Report'},{id:'assistente',l:'✦ Assistente'}];
+  const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,eventi:data.eventi||[],setEventi,obiettivi:data.obiettivi||{},setObiettivi,precedente:data.precedente,setPrecedente,te,tf,tv};
 
   // Schermata di setup
   if(err==='setup'){
@@ -1353,6 +1493,7 @@ function App(){
     
     tab==='debiti'&&h(Debiti,sh),
     tab==='eventi'&&h(Eventi,sh),
+    tab==='obiettivi'&&h(Obiettivi,sh),
     tab==='panoramica'&&h(Panoramica,sh),
       tab==='analisi'&&h(Analisi,sh),
       tab==='report'&&h(Report,sh),
