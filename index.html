@@ -81,7 +81,7 @@ const {createRoot}=ReactDOM;
 const MESI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
-const VERS='14.10d';
+const VERS='14.10f';
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
 
@@ -97,7 +97,7 @@ function autoMacro(nome){
   return 'Spese variabili';
 }
 
-const EMPTY={entrate:[],fisse:{},variabili:[],debiti:[],eventi:[],obiettivi:{},precedente:{}};
+const EMPTY={entrate:[],fisse:{},variabili:[],debiti:[],eventi:[],appuntamenti:[],obiettivi:{},precedente:{}};
 const JB='https://api.jsonbin.io/v3/b';
 
 // ── Helpers generici ─────────────────────────────────────────────
@@ -646,7 +646,7 @@ function Debiti({debiti,setDebiti}){
 }
 
 // ── Eventi ──────────────────────────────────────────────────────
-const TIPI_EV=['Laurea','Compleanno','Festa aziendale','Comunione','Altro'];
+const TIPI_EV=['Laurea','Compleanno','Festa aziendale','Battesimo','Comunione','Altro'];
 const STATI_EV={daconf:{l:'Da confermare',c:'var(--txt3)'},confermato:{l:'Confermato',c:'var(--ac)'},acconto:{l:'Acconto',c:'var(--pos)'}};
 const MIG_ST={opzione:'daconf',confermato:'confermato',fatto:'confermato',saldato:'acconto'};
 const MIG_TP={Banchetto:'Altro',Catering:'Altro','Cena privata':'Altro',Aziendale:'Festa aziendale'};
@@ -882,6 +882,198 @@ function Eventi({mese,setMese,eventi,setEventi}){
       })
     ),
     h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'12px 0 20px',lineHeight:'1.6'}},'tocca un evento per modificarlo · gli incassi vanno registrati anche in Entrate nel giorno in cui entrano in cassa')
+  );
+}
+
+const ESITI={attesa:{l:'Da fare',c:'var(--txt3)'},valutazione:{l:'In valutazione',c:'var(--ac)'},prenotato:{l:'Prenotato con acconto',c:'var(--pos)'},perso:{l:'Non concluso',c:'var(--neg)'}};
+// ── Appuntamenti ────────────────────────────────────────────────
+function Appuntamenti({mese,setMese,appuntamenti,setAppuntamenti,eventi,setAppEv}){
+  const [vista,sVista]=useState('cal');
+  const [gSel,sGSel]=useState('');
+  const [f,sF]=useState(null);
+  const [err,sErr]=useState('');
+
+  const norm=a=>({cliente:'',tipo:'Altro',data:'',ora:'',persone:0,dataEvento:'',invitati:0,prezzoP:0,note:'',esito:'attesa',accImporto:0,accMetodo:METODI[0],accData:'',eventoId:'',...a});
+  const tutti=(appuntamenti||[]).map(norm);
+  const lista=tutti.filter(a=>!a.data||gm(a.data)===mese)
+    .sort((x,y)=>((x.data||'9')+(x.ora||'99')).localeCompare((y.data||'9')+(y.ora||'99')));
+  const listaV=gSel?lista.filter(a=>a.data===gSel):lista;
+
+  const oggi=tod();
+  const futuri=tutti.filter(a=>a.data&&a.data>=oggi).sort((x,y)=>((x.data)+(x.ora||'99')).localeCompare((y.data)+(y.ora||'99')));
+  const prossimo=futuri[0];
+  const invMese=lista.reduce((s,a)=>s+(a.invitati||0),0);
+
+  const gg=new Date(ANNO,mese,0).getDate();
+  const primo=(new Date(ANNO,mese-1,1).getDay()+6)%7;
+  const celle=[];
+  for(let i=0;i<primo;i++)celle.push(null);
+  for(let d=1;d<=gg;d++)celle.push(d);
+  const dstr=d=>`${ANNO}-${String(mese).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const apDi=d=>lista.filter(a=>a.data===dstr(d));
+
+  const campo=(lab,el,fx)=>h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',flex:fx||'1 1 130px',minWidth:0}},h('span',{style:{...HS,fontSize:'9.5px'}},lab),el);
+  const inp=(val,fn,tp,ph)=>h('input',{type:tp||'text',value:(val===0&&tp==='number')?'':(val||''),placeholder:ph||'',onChange:e=>fn(e.target.value),style:{...IS,padding:'9px 10px',fontSize:'14px'}});
+  const ro=v=>h('div',{style:{...IS,padding:'9px 10px',fontSize:'14px',color:'var(--txt3)',background:'transparent'}},v);
+
+  const nuovo=()=>{const dft=(new Date().getMonth()+1)===mese?tod():dstr(1);sErr('');sF({id:uid(),cliente:'',tipo:'Altro',data:dft,ora:'',persone:0,dataEvento:'',invitati:0,prezzoP:0,note:'',esito:'attesa',accImporto:0,accMetodo:METODI[0],accData:tod(),eventoId:'',_new:true});};
+  const apri=a=>{sErr('');sF({...norm(a),_new:false});};
+  const sfF=p=>sF({...f,...p});
+  const salva=()=>{
+    if(!f.cliente.trim()){sErr('Serve almeno il nome del cliente');return;}
+    const {_new,...ap}=f;
+    if(ap.esito==='prenotato'){
+      const manca=[];
+      if(!ap.dataEvento)manca.push('il giorno dell evento');
+      if(!(ap.invitati>0))manca.push('il numero di invitati');
+      if(!(ap.prezzoP>0))manca.push('il prezzo a persona');
+      if(!(ap.accImporto>0))manca.push('l importo dell acconto');
+      if(manca.length){sErr('Per prenotare serve '+manca.join(', '));return;}
+      const evs=eventi||[];
+      const esiste=ap.eventoId?evs.find(e=>e.id===ap.eventoId):null;
+      const evId=esiste?esiste.id:uid();
+      const acc=[{id:uid(),data:ap.accData||tod(),importo:ap.accImporto,metodo:ap.accMetodo,nota:'acconto da appuntamento'}];
+      const ev={
+        id:evId,nome:ap.cliente,data:ap.dataEvento,tipo:ap.tipo,
+        persone:ap.invitati,prezzoP:ap.prezzoP,prezzo:ap.invitati*ap.prezzoP,
+        acconti:esiste?(esiste.acconti&&esiste.acconti.length?esiste.acconti:acc):acc,
+        cPers:esiste?(esiste.cPers||0):0,cAltro:esiste?(esiste.cAltro||0):0,
+        stato:'acconto',note:ap.note||'',menu:esiste?esiste.menu:null,menuUrl:esiste?(esiste.menuUrl||''):''
+      };
+      ap.eventoId=evId;
+      const nuoviAp=_new?[...tutti,ap]:tutti.map(x=>x.id===ap.id?ap:x);
+      const nuoviEv=esiste?evs.map(e=>e.id===evId?ev:e):[...evs,ev];
+      setAppEv(nuoviAp,nuoviEv);
+      sF(null);
+      return;
+    }
+    setAppuntamenti(_new?[...tutti,ap]:tutti.map(x=>x.id===ap.id?ap:x));
+    sF(null);
+  };
+  const elimina=()=>{setAppuntamenti(tutti.filter(x=>x.id!==f.id));sF(null);};
+
+  if(f){
+    const tot=(f.invitati||0)*(f.prezzoP||0);
+    return h(Pg,null,
+      h(PgHdr,{title:f._new?'Nuovo appuntamento':'Modifica appuntamento',right:h('button',{onClick:()=>sF(null),style:{background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--txt2)',fontFamily:'var(--mono)',fontSize:'12px',padding:'8px 14px',cursor:'pointer',minHeight:'36px'}},'Annulla')}),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'10px'}},'Appuntamento'),
+        h('div',{style:{marginBottom:'11px'}},campo('Nome del cliente',inp(f.cliente,x=>{sErr('');sfF({cliente:x});},'text','Mario Rossi'),'1 1 100%')),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+          campo('Giorno',inp(f.data,x=>sfF({data:x}),'date')),
+          campo('Ora',inp(f.ora,x=>sfF({ora:x}),'time'))
+        ),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap'}},
+          campo('Tipo di evento',h('select',{value:f.tipo,onChange:v=>sfF({tipo:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px'}},TIPI_EV.map(t=>h('option',{key:t,value:t},t)))),
+          campo('Persone all appuntamento',inp(f.persone,x=>sfF({persone:parseInt(x,10)||0}),'number','0'))
+        )
+      ),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Esito'),
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
+          Object.keys(ESITI).map(k=>h('button',{key:k,onClick:()=>{sErr('');sfF({esito:k});},style:{flex:'1 1 46%',border:`0.5px solid ${f.esito===k?ESITI[k].c:'var(--border2)'}`,background:f.esito===k?'var(--surf2)':'transparent',color:f.esito===k?ESITI[k].c:'var(--txt2)',borderRadius:'var(--rad)',padding:'10px 6px',fontFamily:'var(--mono)',fontSize:'12px',fontWeight:f.esito===k?'500':'300',cursor:'pointer',minHeight:'40px'}},ESITI[k].l))
+        ),
+        f.esito==='prenotato'&&h('div',{style:{marginTop:'12px',paddingTop:'11px',borderTop:'0.5px solid var(--border)'}},
+          h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Acconto ricevuto'),
+          h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap'}},
+            campo('Importo',inp(f.accImporto,x=>{sErr('');sfF({accImporto:parseFloat(x)||0});},'number','0,00')),
+            campo('Data',inp(f.accData,x=>sfF({accData:x}),'date')),
+            campo('Metodo',h('select',{value:f.accMetodo,onChange:v=>sfF({accMetodo:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px'}},METODI.map(m=>h('option',{key:m,value:m},m))))
+          ),
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--pos)',marginTop:'10px',lineHeight:'1.5'}},f.eventoId?'al salvataggio aggiorno l evento gia creato in Eventi':'al salvataggio creo l evento nella tab Eventi')
+        )
+      ),
+
+      h('div',{style:{...card,padding:'15px 14px',marginBottom:'14px'}},
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'3px'}},'Dati dell evento'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:f.esito==='prenotato'?'var(--neg)':'var(--txt3)',marginBottom:'11px'}},f.esito==='prenotato'?'obbligatori per prenotare':'facoltativi, da compilare quando li sai'),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+          campo('Giorno dell evento',inp(f.dataEvento,x=>sfF({dataEvento:x}),'date')),
+          campo('Invitati',inp(f.invitati,x=>sfF({invitati:parseInt(x,10)||0}),'number','0'))
+        ),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
+          campo('Prezzo a persona',inp(f.prezzoP,x=>sfF({prezzoP:parseFloat(x)||0}),'number','0,00')),
+          campo('Totale indicativo',ro(tot>0?euro(tot):'—'))
+        ),
+        campo('Note',h('textarea',{value:f.note||'',placeholder:'Richieste, menu, sala, allergie, budget...',onChange:v=>sfF({note:v.target.value}),rows:3,style:{...IS,padding:'9px 10px',fontSize:'14px',resize:'vertical',lineHeight:'1.5'}}),'1 1 100%')
+      ),
+
+      err&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--neg)',textAlign:'center',marginBottom:'10px'}},err),
+      h('button',{onClick:salva,style:{width:'100%',border:'none',borderRadius:'var(--rad)',background:'var(--ac)',color:'#fff',fontFamily:'var(--mono)',fontSize:'15px',fontWeight:'500',padding:'14px',cursor:'pointer',marginBottom:'10px'}},'Salva appuntamento'),
+      !f._new&&h('button',{onClick:elimina,style:{width:'100%',background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--neg)',fontFamily:'var(--mono)',fontSize:'13px',padding:'11px',cursor:'pointer',marginBottom:'24px'}},'Elimina appuntamento')
+    );
+  }
+
+  return h(Pg,null,
+    h(PgHdr,{title:'Appuntamenti',right:h(MS,{mese,setMese})}),
+
+    h('button',{onClick:nuovo,style:{width:'100%',border:'none',borderRadius:'var(--rad)',background:'var(--ac)',color:'#fff',fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',padding:'13px',cursor:'pointer',marginBottom:'12px'}},'+  Nuovo appuntamento'),
+
+    h('div',{style:{...card,padding:'13px 14px',marginBottom:'10px'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px'}},
+        h('div',null,h('div',{style:{...HS,fontSize:'9.5px'}},'Appuntamenti del mese'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:'var(--txt)',marginTop:'2px'}},lista.length)),
+        h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Prenotati'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:lista.filter(a=>a.esito==='prenotato').length>0?'var(--pos)':'var(--txt3)',marginTop:'2px'}},lista.filter(a=>a.esito==='prenotato').length)),
+        h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Invitati attesi'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:invMese>0?'var(--pos)':'var(--txt3)',marginTop:'2px'}},invMese>0?invMese:'—'))
+      ),
+      prossimo&&h('div',{style:{borderTop:'0.5px solid var(--border)',marginTop:'10px',paddingTop:'9px'}},
+        h('div',{style:{...HS,fontSize:'9px',marginBottom:'3px'}},'Prossimo'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:'var(--ac)'}},`${prossimo.cliente||'(senza nome)'} · ${FMD(prossimo.data)}${prossimo.ora?' alle '+prossimo.ora:''}`)
+      )
+    ),
+
+    h('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},
+      h('button',{onClick:()=>sVista('cal'),style:{flex:1,border:`0.5px solid ${vista==='cal'?'var(--ac)':'var(--border2)'}`,background:vista==='cal'?'var(--ac-bg)':'transparent',color:vista==='cal'?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},'Calendario'),
+      h('button',{onClick:()=>{sVista('elenco');sGSel('');},style:{flex:1,border:`0.5px solid ${vista==='elenco'?'var(--ac)':'var(--border2)'}`,background:vista==='elenco'?'var(--ac-bg)':'transparent',color:vista==='elenco'?'var(--ac)':'var(--txt2)',borderRadius:'var(--rad)',padding:'8px',fontFamily:'var(--mono)',fontSize:'12px',cursor:'pointer',minHeight:'36px'}},'Elenco')
+    ),
+
+    vista==='cal'&&h('div',{style:{...card,padding:'10px 8px 12px',marginBottom:'10px'}},
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'3px',marginBottom:'4px'}},
+        ['L','M','M','G','V','S','D'].map((g,i)=>h('div',{key:i,style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'3px 0'}},g))
+      ),
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'3px'}},
+        celle.map((d,i)=>{
+          if(d===null)return h('div',{key:'v'+i});
+          const ds=dstr(d),ap=apDi(d),sel=gSel===ds,isOggi=ds===tod();
+          return h('button',{key:d,onClick:()=>sGSel(sel?'':ds),style:{border:`0.5px solid ${sel?'var(--ac)':isOggi?'var(--border2)':'transparent'}`,background:sel?'var(--ac-bg)':ap.length?'var(--surf2)':'transparent',borderRadius:'var(--rad)',minHeight:'44px',padding:'4px 2px 3px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',gap:'3px'}},
+            h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:sel?'var(--ac)':isOggi?'var(--txt)':ap.length?'var(--txt)':'var(--txt3)',fontWeight:isOggi||ap.length?'500':'300'}},d),
+            h('span',{style:{display:'flex',gap:'2px',justifyContent:'center',flexWrap:'wrap'}},
+              ap.slice(0,3).map(a=>h('span',{key:a.id,style:{width:'5px',height:'5px',borderRadius:'50%',background:ds<oggi?'var(--txt3)':'var(--ac)',display:'block'}}))
+            )
+          );
+        })
+      ),
+      gSel&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'10px',paddingTop:'9px',borderTop:'0.5px solid var(--border)'}},
+        h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--ac)'}},`Giorno ${FMD(gSel)} · ${lista.filter(a=>a.data===gSel).length} appuntamenti`),
+        h('button',{onClick:()=>sGSel(''),style:{background:'none',border:'0.5px solid var(--border2)',borderRadius:'var(--rad)',color:'var(--txt2)',fontFamily:'var(--mono)',fontSize:'11px',padding:'5px 10px',cursor:'pointer'}},'Mostra tutto')
+      )
+    ),
+
+    h('div',{style:{...card}},
+      listaV.length===0&&h('div',{style:{padding:'32px 16px',textAlign:'center',color:'var(--txt3)',fontSize:'13px'}},gSel?'Nessun appuntamento in questo giorno':'Nessun appuntamento questo mese'),
+      listaV.map(a=>{
+        const passato=a.data&&a.data<oggi;
+        return h('div',{key:a.id,onClick:()=>apri(a),style:{display:'flex',alignItems:'center',gap:'10px',padding:'12px 13px 12px 10px',borderLeft:`3px solid ${(ESITI[a.esito]||ESITI.attesa).c}`,borderBottom:'0.5px solid var(--border)',cursor:'pointer',opacity:passato&&a.esito==='attesa'?0.6:1}},
+          h('div',{style:{flex:1,minWidth:0}},
+            h('div',{style:{fontSize:'14px',fontWeight:'500',color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},a.cliente||'(senza nome)'),
+            h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'4px',flexWrap:'wrap'}},
+              h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:(ESITI[a.esito]||ESITI.attesa).c,border:`0.5px solid ${(ESITI[a.esito]||ESITI.attesa).c}`,borderRadius:'12px',padding:'2px 8px'}},(ESITI[a.esito]||ESITI.attesa).l),
+              h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},a.tipo),
+              a.persone>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)'}},`${a.persone} in sala`),
+              a.dataEvento&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--pos)'}},`evento ${FMD(a.dataEvento)}`),
+              a.invitati>0&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--pos)'}},`${a.invitati} invitati`)
+            )
+          ),
+          h('div',{style:{textAlign:'right',flexShrink:0}},
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:passato?'var(--txt3)':'var(--ac)'}},a.ora||'—'),
+            h('div',{style:{...HS,fontSize:'9px',marginTop:'2px'}},a.data?FMD(a.data):'senza data')
+          ),
+          h('span',{style:{color:'var(--txt3)',fontSize:'13px',flexShrink:0}},'\u203a')
+        );
+      })
+    ),
+    h('div',{style:{...HS,fontSize:'9.5px',textAlign:'center',padding:'12px 0 20px',lineHeight:'1.6'}},'tocca un appuntamento per modificarlo · gli appuntamenti passati restano in grigio')
   );
 }
 
@@ -1455,14 +1647,16 @@ function App(){
   const setPrecedente=v=>{const nd={...data,precedente:v};sData(nd);save(nd);};
   const setEventi=v=>{const nd={...data,eventi:v};sData(nd);save(nd);};
   const setObiettivi=v=>{const nd={...data,obiettivi:v};sData(nd);save(nd);};
+  const setAppuntamenti=v=>{const nd={...data,appuntamenti:v};sData(nd);save(nd);};
+  const setAppEv=(ap,ev)=>{const nd={...data,appuntamenti:ap,eventi:ev};sData(nd);save(nd);};
 
   const cm2=new Date().getMonth()+1;
   const te=m=>{const d=data.entrate.filter(e=>gm(e.data)===m).reduce((s,e)=>s+e.importo,0);return d>0?d:(m<cm2?(data.precedente['m'+m]||0):0);};
   const tf=m=>(data.fisse[String(m)]||[]).reduce((s,v)=>s+(v.importo||0),0);
   const tv=m=>data.variabili.filter(v=>gm(v.data)===m).reduce((s,v)=>s+v.importo,0);
 
-  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'eventi',l:'Eventi'},{id:'obiettivi',l:'Obiettivi'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'report',l:'Report'},{id:'assistente',l:'✦ Assistente'}];
-  const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,eventi:data.eventi||[],setEventi,obiettivi:data.obiettivi||{},setObiettivi,precedente:data.precedente,setPrecedente,te,tf,tv};
+  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'eventi',l:'Eventi'},{id:'appuntamenti',l:'Appuntamenti'},{id:'obiettivi',l:'Obiettivi'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'report',l:'Report'},{id:'assistente',l:'✦ Assistente'}];
+  const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,eventi:data.eventi||[],setEventi,obiettivi:data.obiettivi||{},setObiettivi,appuntamenti:data.appuntamenti||[],setAppuntamenti,setAppEv,precedente:data.precedente,setPrecedente,te,tf,tv};
 
   // Schermata di setup
   if(err==='setup'){
@@ -1521,6 +1715,7 @@ function App(){
     
     tab==='debiti'&&h(Debiti,sh),
     tab==='eventi'&&h(Eventi,sh),
+    tab==='appuntamenti'&&h(Appuntamenti,sh),
     tab==='obiettivi'&&h(Obiettivi,sh),
     tab==='panoramica'&&h(Panoramica,sh),
       tab==='analisi'&&h(Analisi,sh),
