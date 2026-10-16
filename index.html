@@ -81,7 +81,7 @@ const {createRoot}=ReactDOM;
 const MESI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
-const VERS='14.10c';
+const VERS='14.10d';
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
 
@@ -988,7 +988,7 @@ function Obiettivi({mese,setMese,entrate,obiettivi,setObiettivi,precedente,te}){
     ),
 
     obj>0&&!edit&&h(Fragment,null,
-      h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'7px',paddingLeft:'2px'}},'Settimana per settimana'),
+      h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'7px',paddingLeft:'2px'}},'Settimana per settimana · fatto su obiettivo'),
       h('div',{style:{...card,marginBottom:'10px'}},
         sett.map(w=>{
           const io=apri===w.k,p=w.target>0?w.inc/w.target*100:0;
@@ -996,15 +996,43 @@ function Obiettivi({mese,setMese,entrate,obiettivi,setObiettivi,precedente,te}){
             h('div',{onClick:()=>sApri(io?'':w.k),style:{padding:'12px 14px',borderBottom:'0.5px solid var(--border)',cursor:'pointer',background:io?'var(--surf2)':w.corrente?'var(--ac-bg)':'transparent'}},
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'7px'}},
                 h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:w.corrente?'var(--ac)':'var(--txt)'}},`Sett. ${w.n} · ${w.dal}-${w.al} ${MESI[mese-1].slice(0,3).toLowerCase()}${w.corrente?' •':''}`),
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:'500',color:w.inc>0||w.passata?col(p):'var(--txt3)'}},`${euro(w.inc)} / ${euro(w.target)}`)
+                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',fontWeight:'500',color:(w.target-w.inc)<=0?'var(--pos)':'var(--neg)'}},(w.target-w.inc)<=0?`sopra di ${euro(w.inc-w.target)}`:`manca ${euro(w.target-w.inc)}`)
               ),
               barra(w.inc,w.target,w.inc>0||w.passata?col(p):'var(--border2)'),
-              h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px'}},
-                h('span',{style:{fontFamily:'var(--mono)',fontSize:'10px',color:'var(--txt3)'}},`Mar-Gio ${euro(w.infT)} · Ven-Dom ${euro(w.wkT)}`),
-                h('span',{style:{color:'var(--txt3)',fontSize:'11px'}},io?'chiudi':'giorni')
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:'7px'}},
+                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px'}},
+                  h('span',{style:{color:'var(--txt3)'}},'fatto '),
+                  h('span',{style:{color:w.inc>0?'var(--pos)':'var(--txt3)',fontWeight:'500'}},euro(w.inc)),
+                  h('span',{style:{color:'var(--txt3)'}},'  su  '),
+                  h('span',{style:{color:'var(--txt2)'}},euro(w.target))
+                ),
+                h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',fontWeight:'500',color:w.inc>0||w.passata?col(p):'var(--txt3)'}},`${p.toFixed(0)}%`)
+              ),
+              h('div',{style:{marginTop:'7px',paddingTop:'7px',borderTop:'0.5px solid var(--border)'}},
+                h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'3px'}},
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'Mar-Gio'),
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px'}},
+                    h('span',{style:{color:w.infI>0?'var(--pos)':'var(--txt3)'}},euro(w.infI)),
+                    h('span',{style:{color:'var(--txt3)'}},' su '+euro(w.infT)))
+                ),
+                h('div',{style:{display:'flex',justifyContent:'space-between'}},
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'Ven-Dom'),
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px'}},
+                    h('span',{style:{color:w.wkI>0?'var(--pos)':'var(--txt3)'}},euro(w.wkI)),
+                    h('span',{style:{color:'var(--txt3)'}},' su '+euro(w.wkT)))
+                ),
+                h('div',{style:{textAlign:'right',marginTop:'5px'}},
+                  h('span',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--ac)'}},io?'chiudi i giorni':'vedi i giorni')
+                )
               )
             ),
             io&&h('div',{style:{background:'var(--surf2)',borderBottom:'0.5px solid var(--border)',padding:'4px 14px 11px'}},
+              h('div',{style:{display:'flex',gap:'9px',padding:'6px 0',borderBottom:'0.5px solid var(--border)'}},
+                h('span',{style:{...HS,fontSize:'9px',width:'58px',flexShrink:0}},'Giorno'),
+                h('span',{style:{flex:1}}),
+                h('span',{style:{...HS,fontSize:'9px',width:'72px',textAlign:'right',flexShrink:0}},'Fatto'),
+                h('span',{style:{...HS,fontSize:'9px',width:'72px',textAlign:'right',flexShrink:0}},'Obiettivo')
+              ),
               w.gg.map(g=>{
                 const t=targetG(g),i=incG(g.ds),chiuso=g.peso===0;
                 return h('div',{key:g.ds,style:{display:'flex',alignItems:'center',gap:'9px',padding:'7px 0',borderBottom:'0.5px solid var(--border)'}},
