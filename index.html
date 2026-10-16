@@ -81,7 +81,7 @@ const {createRoot}=ReactDOM;
 const MESI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
-const VERS='14.10g';
+const VERS='14.10i';
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
 
@@ -222,7 +222,7 @@ function PgHdr({title,right}){
 }
 
 // ── Dashboard ────────────────────────────────────────────────────
-function Dashboard({mese,setMese,te,tf,tv,debiti}){
+function Dashboard({mese,setMese,te,tf,tv,debiti,eventi,appuntamenti}){
   const ent=te(mese),fis=tf(mese),vari=tv(mese),usc=fis+vari,saldo=ent-usc;
   const dr=debiti.reduce((s,d)=>s+d.residuo,0);
   const teAnno=MN.reduce((s,m)=>s+te(m),0);
@@ -235,7 +235,41 @@ function Dashboard({mese,setMese,te,tf,tv,debiti}){
       h(MC,{label:'Totale uscite',value:euro(usc),color:'var(--neg)'}),
       h(MC,{label:'Saldo',value:euro(saldo),color:saldo>=0?'var(--pos)':'var(--neg)'}),
       h(MC,{label:'Debiti residui',value:euro(dr),color:'var(--txt2)'})
-    )
+    ),
+    (()=>{
+      const o=tod(),fra30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+      const ap=(appuntamenti||[]),ev=(eventi||[]);
+      const prossimi=ap.filter(a=>a.data&&a.data>=o).sort((x,y)=>((x.data)+(x.ora||'99')).localeCompare((y.data)+(y.ora||'99')));
+      const oggi=prossimi.filter(a=>a.data===o);
+      const scaduti=ap.filter(a=>a.data&&a.data<o&&(!a.esito||a.esito==='attesa'));
+      const evProx=ev.filter(e=>e.data&&e.data>=o&&e.data<=fra30).sort((x,y)=>x.data.localeCompare(y.data));
+      const coperti=evProx.reduce((s2,e)=>s2+(e.persone||0),0);
+      const daInc=ev.filter(e=>e.data&&e.data>=o).reduce((s2,e)=>{
+        const t=(e.persone||0)*(e.prezzoP||0),i=(e.acconti||[]).reduce((x,a)=>x+a.importo,0);
+        return s2+Math.max(0,t-i);},0);
+      if(!prossimi.length&&!evProx.length&&!scaduti.length&&daInc===0)return null;
+      const riga=(lab,val,col,sub2)=>h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:'10px',padding:'9px 0',borderBottom:'0.5px solid var(--border)'}},
+        h('div',{style:{minWidth:0}},
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--txt2)'}},lab),
+          sub2&&h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)',marginTop:'2px'}},sub2)
+        ),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:col,textAlign:'right',flexShrink:0}},val)
+      );
+      return h('div',{style:{...card,padding:'14px 16px',marginTop:'12px'}},
+        h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'6px'}},'Prossimi impegni'),
+        oggi.length>0&&riga('Appuntamenti oggi',oggi.length,'var(--ac)',oggi.map(a=>`${a.ora||''} ${a.cliente||''}`.trim()).join(' · ')),
+        prossimi.length>0&&oggi.length===0&&riga('Prossimo appuntamento',FMD(prossimi[0].data),'var(--ac)',`${prossimi[0].cliente||'(senza nome)'}${prossimi[0].ora?' alle '+prossimi[0].ora:''}`),
+        evProx.length>0&&riga('Eventi nei prossimi 30 giorni',evProx.length,'var(--txt)',`${coperti} coperti · il primo ${FMD(evProx[0].data)}`),
+        daInc>0&&riga('Da incassare dagli eventi',euro(daInc),'var(--neg)','saldi ancora da ricevere'),
+        scaduti.length>0&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:'10px',padding:'10px 0 2px'}},
+          h('div',{style:{minWidth:0}},
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--neg)'}},'Appuntamenti passati senza esito'),
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)',marginTop:'2px'}},scaduti.map(a=>a.cliente||'(senza nome)').slice(0,3).join(' · ')+(scaduti.length>3?' e altri':''))
+          ),
+          h('div',{style:{fontFamily:'var(--mono)',fontSize:'14px',fontWeight:'500',color:'var(--neg)',flexShrink:0}},scaduti.length)
+        )
+      );
+    })()
   );
 }
 
@@ -881,7 +915,14 @@ function Eventi({mese,setMese,eventi,setEventi}){
   );
 }
 
-const ESITI={attesa:{l:'Da fare',c:'var(--txt3)'},valutazione:{l:'In valutazione',c:'var(--ac)'},prenotato:{l:'Prenotato con acconto',c:'var(--pos)'},perso:{l:'Non concluso',c:'var(--neg)'}};
+const ESITI={
+  attesa:{l:'Da fare',c:'var(--txt3)'},
+  valutazione:{l:'In valutazione',c:'var(--ac)'},
+  conf_senza:{l:'Confermato senza acconto',c:'var(--pos)'},
+  conf_con:{l:'Confermato con acconto',c:'var(--pos)'},
+  perso:{l:'Non concluso',c:'var(--neg)'}
+};
+const CONF=e=>e==='conf_senza'||e==='conf_con';
 // ── Appuntamenti ────────────────────────────────────────────────
 function Appuntamenti({mese,setMese,appuntamenti,setAppuntamenti,eventi,setAppEv}){
   const [vista,sVista]=useState('cal');
@@ -889,7 +930,10 @@ function Appuntamenti({mese,setMese,appuntamenti,setAppuntamenti,eventi,setAppEv
   const [f,sF]=useState(null);
   const [err,sErr]=useState('');
 
-  const norm=a=>({cliente:'',tipo:'Altro',data:'',ora:'',persone:0,dataEvento:'',invitati:0,prezzoP:0,note:'',esito:'attesa',accImporto:0,accMetodo:METODI[0],accData:'',eventoId:'',...a});
+  const norm=a=>{const b={cliente:'',tipo:'Altro',data:'',ora:'',persone:0,dataEvento:'',invitati:0,prezzoP:0,note:'',esito:'attesa',accImporto:0,accMetodo:METODI[0],accData:'',eventoId:'',...a};
+    if(b.esito==='prenotato')b.esito='conf_con';
+    if(!ESITI[b.esito])b.esito='attesa';
+    return b;};
   const tutti=(appuntamenti||[]).map(norm);
   const lista=tutti.filter(a=>!a.data||gm(a.data)===mese)
     .sort((x,y)=>((x.data||'9')+(x.ora||'99')).localeCompare((y.data||'9')+(y.ora||'99')));
@@ -915,26 +959,27 @@ function Appuntamenti({mese,setMese,appuntamenti,setAppuntamenti,eventi,setAppEv
   const nuovo=()=>{const dft=(new Date().getMonth()+1)===mese?tod():dstr(1);sErr('');sF({id:uid(),cliente:'',tipo:'Altro',data:dft,ora:'',persone:0,dataEvento:'',invitati:0,prezzoP:0,note:'',esito:'attesa',accImporto:0,accMetodo:METODI[0],accData:tod(),eventoId:'',_new:true});};
   const apri=a=>{sErr('');sF({...norm(a),_new:false});};
   const sfF=p=>sF({...f,...p});
+  const requisiti=a=>[
+    {ok:!!a.dataEvento,l:'giorno dell evento'},
+    {ok:a.invitati>0,l:'numero di invitati'}
+  ].concat(a.esito==='conf_con'?[{ok:a.accImporto>0,l:'importo dell acconto'}]:[]);
+
   const salva=()=>{
     if(!f.cliente.trim()){sErr('Serve almeno il nome del cliente');return;}
     const {_new,...ap}=f;
-    if(ap.esito==='prenotato'){
-      const manca=[];
-      if(!ap.dataEvento)manca.push('il giorno dell evento');
-      if(!(ap.invitati>0))manca.push('il numero di invitati');
-      if(!(ap.prezzoP>0))manca.push('il prezzo a persona');
-      if(!(ap.accImporto>0))manca.push('l importo dell acconto');
-      if(manca.length){sErr('Per prenotare serve '+manca.join(', '));return;}
+    if(CONF(ap.esito)){
+      const manca=requisiti(ap).filter(r=>!r.ok).map(r=>r.l);
+      if(manca.length){sErr('Per confermare manca '+manca.join(', '));return;}
       const evs=eventi||[];
       const esiste=ap.eventoId?evs.find(e=>e.id===ap.eventoId):null;
       const evId=esiste?esiste.id:uid();
-      const acc=[{id:uid(),data:ap.accData||tod(),importo:ap.accImporto,metodo:ap.accMetodo,nota:'acconto da appuntamento'}];
+      const acc=ap.esito==='conf_con'?[{id:uid(),data:ap.accData||tod(),importo:ap.accImporto,metodo:ap.accMetodo,nota:'acconto da appuntamento'}]:[];
       const ev={
         id:evId,nome:ap.cliente,data:ap.dataEvento,tipo:ap.tipo,
         persone:ap.invitati,prezzoP:ap.prezzoP,prezzo:ap.invitati*ap.prezzoP,
         acconti:esiste?(esiste.acconti&&esiste.acconti.length?esiste.acconti:acc):acc,
         cPers:esiste?(esiste.cPers||0):0,cAltro:esiste?(esiste.cAltro||0):0,
-        stato:'acconto',note:ap.note||'',menu:esiste?esiste.menu:null,menuUrl:esiste?(esiste.menuUrl||''):''
+        stato:ap.esito==='conf_con'?'acconto':'confermato',note:ap.note||'',menu:esiste?esiste.menu:null,menuUrl:esiste?(esiste.menuUrl||''):''
       };
       ap.eventoId=evId;
       const nuoviAp=_new?[...tutti,ap]:tutti.map(x=>x.id===ap.id?ap:x);
@@ -968,23 +1013,35 @@ function Appuntamenti({mese,setMese,appuntamenti,setAppuntamenti,eventi,setAppEv
 
       h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
         h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Esito'),
+        err&&h('div',{style:{background:'rgba(163,45,45,0.12)',border:'0.5px solid var(--neg)',borderRadius:'var(--rad)',padding:'9px 11px',marginBottom:'10px',fontFamily:'var(--mono)',fontSize:'12px',color:'var(--neg)',lineHeight:'1.5'}},err),
         h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
           Object.keys(ESITI).map(k=>h('button',{key:k,onClick:()=>{sErr('');sfF({esito:k});},style:{flex:'1 1 46%',border:`0.5px solid ${f.esito===k?ESITI[k].c:'var(--border2)'}`,background:f.esito===k?'var(--surf2)':'transparent',color:f.esito===k?ESITI[k].c:'var(--txt2)',borderRadius:'var(--rad)',padding:'10px 6px',fontFamily:'var(--mono)',fontSize:'12px',fontWeight:f.esito===k?'500':'300',cursor:'pointer',minHeight:'40px'}},ESITI[k].l))
         ),
-        f.esito==='prenotato'&&h('div',{style:{marginTop:'12px',paddingTop:'11px',borderTop:'0.5px solid var(--border)'}},
+        f.esito==='conf_con'&&h('div',{style:{marginTop:'12px',paddingTop:'11px',borderTop:'0.5px solid var(--border)'}},
           h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Acconto ricevuto'),
           h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap'}},
             campo('Importo',inp(f.accImporto,x=>{sErr('');sfF({accImporto:parseFloat(x)||0});},'number','0,00')),
             campo('Data',inp(f.accData,x=>sfF({accData:x}),'date')),
             campo('Metodo',h('select',{value:f.accMetodo,onChange:v=>sfF({accMetodo:v.target.value}),style:{...IS,padding:'9px 10px',fontSize:'14px'}},METODI.map(m=>h('option',{key:m,value:m},m))))
-          ),
-          h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--pos)',marginTop:'10px',lineHeight:'1.5'}},f.eventoId?'al salvataggio aggiorno l evento gia creato in Eventi':'al salvataggio creo l evento nella tab Eventi')
-        )
+          )
+        ),
+        CONF(f.esito)&&(()=>{
+          const rq=requisiti(f),manca=rq.filter(r=>!r.ok);
+          return h('div',{style:{marginTop:'12px',paddingTop:'11px',borderTop:'0.5px solid var(--border)'}},
+            h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'8px'}},manca.length?'Per creare l evento serve':'Pronto per diventare evento'),
+            rq.map(r=>h('div',{key:r.l,style:{display:'flex',alignItems:'center',gap:'8px',padding:'3px 0'}},
+              h('span',{style:{fontFamily:'var(--mono)',fontSize:'13px',color:r.ok?'var(--pos)':'var(--neg)',width:'16px'}},r.ok?'\u2713':'\u00d7'),
+              h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:r.ok?'var(--txt2)':'var(--neg)'}},r.l)
+            )),
+            h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:manca.length?'var(--txt3)':'var(--pos)',marginTop:'9px',lineHeight:'1.5'}},
+              manca.length?'compila i campi qui sotto, poi salva':(f.eventoId?'al salvataggio aggiorno l evento in Eventi':'al salvataggio creo l evento nella tab Eventi'))
+          );
+        })()
       ),
 
       h('div',{style:{...card,padding:'15px 14px',marginBottom:'14px'}},
         h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'3px'}},'Dati dell evento'),
-        h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:f.esito==='prenotato'?'var(--neg)':'var(--txt3)',marginBottom:'11px'}},f.esito==='prenotato'?'obbligatori per prenotare':'facoltativi, da compilare quando li sai'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:CONF(f.esito)?'var(--neg)':'var(--txt3)',marginBottom:'11px'}},CONF(f.esito)?'giorno e invitati obbligatori per confermare':'facoltativi, da compilare quando li sai'),
         h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap',marginBottom:'11px'}},
           campo('Giorno dell evento',inp(f.dataEvento,x=>sfF({dataEvento:x}),'date')),
           campo('Invitati',inp(f.invitati,x=>sfF({invitati:parseInt(x,10)||0}),'number','0'))
@@ -1010,7 +1067,7 @@ function Appuntamenti({mese,setMese,appuntamenti,setAppuntamenti,eventi,setAppEv
     h('div',{style:{...card,padding:'13px 14px',marginBottom:'10px'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px'}},
         h('div',null,h('div',{style:{...HS,fontSize:'9.5px'}},'Appuntamenti del mese'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:'var(--txt)',marginTop:'2px'}},lista.length)),
-        h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Prenotati'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:lista.filter(a=>a.esito==='prenotato').length>0?'var(--pos)':'var(--txt3)',marginTop:'2px'}},lista.filter(a=>a.esito==='prenotato').length)),
+        h('div',{style:{textAlign:'center'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Confermati'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:lista.filter(a=>CONF(a.esito)).length>0?'var(--pos)':'var(--txt3)',marginTop:'2px'}},lista.filter(a=>CONF(a.esito)).length)),
         h('div',{style:{textAlign:'right'}},h('div',{style:{...HS,fontSize:'9.5px'}},'Invitati attesi'),h('div',{style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:'500',color:invMese>0?'var(--pos)':'var(--txt3)',marginTop:'2px'}},invMese>0?invMese:'—'))
       ),
       prossimo&&h('div',{style:{borderTop:'0.5px solid var(--border)',marginTop:'10px',paddingTop:'9px'}},
@@ -1653,7 +1710,7 @@ function App(){
   const tf=m=>(data.fisse[String(m)]||[]).reduce((s,v)=>s+(v.importo||0),0);
   const tv=m=>data.variabili.filter(v=>gm(v.data)===m).reduce((s,v)=>s+v.importo,0);
 
-  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'eventi',l:'Eventi'},{id:'appuntamenti',l:'Appuntamenti'},{id:'obiettivi',l:'Obiettivi'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'report',l:'Report'},{id:'assistente',l:'✦ Assistente'}];
+  const TABS=[{id:'dashboard',l:'Dashboard'},{id:'entrate',l:'Entrate'},{id:'fisse',l:'Spese'},{id:'debiti',l:'Debiti'},{id:'appuntamenti',l:'Appuntamenti'},{id:'eventi',l:'Eventi'},{id:'obiettivi',l:'Obiettivi'},{id:'panoramica',l:'Panoramica'},{id:'analisi',l:'Analisi'},{id:'report',l:'Report'},{id:'assistente',l:'✦ Assistente'}];
   const sh={mese,setMese:sMese,entrate:data.entrate,setEntrate,fisse:data.fisse,setFisse,variabili:data.variabili,setVariabili,debiti:data.debiti,setDebiti,eventi:data.eventi||[],setEventi,obiettivi:data.obiettivi||{},setObiettivi,appuntamenti:data.appuntamenti||[],setAppuntamenti,setAppEv,precedente:data.precedente,setPrecedente,te,tf,tv};
 
   // Schermata di setup
@@ -1717,8 +1774,8 @@ function App(){
     tab==='fisse'&&h(SpeseFisse,{...sh,debiti:data.debiti,setDebiti}),
     
     tab==='debiti'&&h(Debiti,sh),
-    tab==='eventi'&&h(Eventi,sh),
     tab==='appuntamenti'&&h(Appuntamenti,sh),
+    tab==='eventi'&&h(Eventi,sh),
     tab==='obiettivi'&&h(Obiettivi,sh),
     tab==='panoramica'&&h(Panoramica,sh),
       tab==='analisi'&&h(Analisi,sh),
