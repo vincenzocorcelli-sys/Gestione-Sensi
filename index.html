@@ -81,7 +81,7 @@ const {createRoot}=ReactDOM;
 const MESI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MN=[1,2,3,4,5,6,7,8,9,10,11,12];
 const ANNO=2026;
-const VERS='14.10f';
+const VERS='14.10g';
 const CATS=['Materie prime / F&B','Lavoro straordinario','Marketing','Manutenzioni','Altro'];
 const FN=['Affitto','Stipendi / collaboratori','Utenze','Commercialista','Software / abbonamenti'];
 
@@ -99,6 +99,8 @@ function autoMacro(nome){
 
 const EMPTY={entrate:[],fisse:{},variabili:[],debiti:[],eventi:[],appuntamenti:[],obiettivi:{},precedente:{}};
 const JB='https://api.jsonbin.io/v3/b';
+// spazio dell'archivio. 100 = piano gratuito, 1000 = piano Pro
+const LIMITE_KB=100;
 
 // ── Helpers generici ─────────────────────────────────────────────
 const euro=n=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(n||0);
@@ -155,7 +157,14 @@ async function jbSave(data){
     localStorage.setItem('sensi_bin_id',bid);
     return bid;
   }else{
-    await fetch(`${JB}/${bid}`,{method:'PUT',headers:{'X-Access-Key':JSONBIN_KEY,'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const body=JSON.stringify(data);
+    const kb=Math.round(body.length/1024);
+    if(body.length>LIMITE_KB*1024)throw new Error(`Archivio pieno. I dati pesano ${kb} KB, il limite e ${LIMITE_KB} KB.`);
+    const r=await fetch(`${JB}/${bid}`,{method:'PUT',headers:{'X-Access-Key':JSONBIN_KEY,'Content-Type':'application/json'},body});
+    if(!r.ok){
+      let d='';try{const j=await r.json();d=j.message||'';}catch(x){}
+      throw new Error(d||`Salvataggio rifiutato dal server (codice ${r.status})`);
+    }
     return bid;
   }
 }
@@ -651,7 +660,6 @@ const STATI_EV={daconf:{l:'Da confermare',c:'var(--txt3)'},confermato:{l:'Confer
 const MIG_ST={opzione:'daconf',confermato:'confermato',fatto:'confermato',saldato:'acconto'};
 const MIG_TP={Banchetto:'Altro',Catering:'Altro','Cena privata':'Altro',Aziendale:'Festa aziendale'};
 const METODI=['Contanti','Bonifico','Carta di credito'];
-const MAX_PDF=260000;
 
 function Eventi({mese,setMese,eventi,setEventi}){
   const [vista,sVista]=useState('cal');
@@ -713,16 +721,6 @@ function Eventi({mese,setMese,eventi,setEventi}){
   const elimina=()=>{setEventi(tutti.filter(x=>x.id!==f.id));sF(null);};
   const addAccF=()=>{if(!af.importo)return;sfF({acconti:[...(f.acconti||[]),{id:uid(),data:af.data,importo:parseFloat(af.importo),metodo:af.metodo,nota:af.nota}],stato:'acconto'});saf({data:tod(),importo:'',metodo:METODI[0],nota:''});};
 
-  const caricaPdf=ev=>{
-    const file=ev.target.files&&ev.target.files[0];
-    if(!file)return;
-    if(file.type!=='application/pdf'){sMsg('Il file deve essere un PDF');return;}
-    if(file.size>MAX_PDF){sMsg(`PDF troppo pesante (${Math.round(file.size/1024)} KB, massimo ${Math.round(MAX_PDF/1024)} KB). Usa il campo link qui sotto.`);return;}
-    const r=new FileReader();
-    r.onload=()=>{sMsg('');sfF({menu:{nome:file.name,size:file.size,data:r.result}});};
-    r.onerror=()=>sMsg('Errore nella lettura del file');
-    r.readAsDataURL(file);
-  };
   const apriPdf=m=>{
     try{
       const b=atob(m.data.split(',')[1]);const u=new Uint8Array(b.length);
@@ -762,15 +760,13 @@ function Eventi({mese,setMese,eventi,setEventi}){
 
       h('div',{style:{...card,padding:'15px 14px',marginBottom:'10px'}},
         h('div',{style:{...HS,fontSize:'9.5px',marginBottom:'9px'}},'Menu'),
-        f.menu?h('div',{style:{display:'flex',alignItems:'center',gap:'9px',padding:'10px',background:'var(--surf2)',borderRadius:'var(--rad)',marginBottom:'9px'}},
+        f.menu&&h('div',{style:{display:'flex',alignItems:'center',gap:'9px',padding:'10px',background:'var(--surf2)',borderRadius:'var(--rad)',marginBottom:'9px'}},
           h('span',{style:{fontFamily:'var(--mono)',fontSize:'12.5px',color:'var(--txt2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},`${f.menu.nome} · ${Math.round(f.menu.size/1024)} KB`),
           h('button',{onClick:()=>apriPdf(f.menu),style:{background:'none',border:'0.5px solid var(--ac)',borderRadius:'var(--rad)',color:'var(--ac)',fontFamily:'var(--mono)',fontSize:'11.5px',padding:'6px 11px',cursor:'pointer'}},'Apri'),
           h('button',{onClick:()=>sfF({menu:null}),style:{background:'none',border:'none',color:'var(--txt3)',fontSize:'17px',padding:'0 3px',cursor:'pointer'}},'×')
-        ):h('label',{style:{display:'block',border:'0.5px dashed var(--border2)',borderRadius:'var(--rad)',padding:'13px',textAlign:'center',color:'var(--ac)',fontFamily:'var(--mono)',fontSize:'12.5px',cursor:'pointer',marginBottom:'9px'}},
-          'Carica il menu in PDF',
-          h('input',{type:'file',accept:'application/pdf',onChange:caricaPdf,style:{display:'none'}})
         ),
-        campo('Oppure link al menu',inp(f.menuUrl,x=>sfF({menuUrl:x}),'text','https://...'),'1 1 100%'),
+        campo('Link al menu',inp(f.menuUrl,x=>sfF({menuUrl:x}),'text','https://drive.google.com/...'),'1 1 100%'),
+        h('div',{style:{fontFamily:'var(--mono)',fontSize:'10.5px',color:'var(--txt3)',marginTop:'7px',lineHeight:'1.5'}},'carica il PDF su Drive e incolla qui il link, cosi non appesantisci l archivio'),
         f.menuUrl&&h('a',{href:f.menuUrl,target:'_blank',style:{display:'inline-block',marginTop:'7px',fontFamily:'var(--mono)',fontSize:'11.5px',color:'var(--ac)'}},'Apri il link')
       ),
 
@@ -1596,6 +1592,7 @@ function App(){
   const [newBinId,sNewBid]=useState('');
   const [syncing,sSyncing]=useState(false);
   const [lastSync,sLastSync]=useState(null);
+  const [errSave,sErrSave]=useState('');
 
   const [data,sData]=useState(EMPTY);
   const cm=new Date().getMonth()+1;
@@ -1634,7 +1631,8 @@ function App(){
       if(bid&&!JSONBIN_BIN_ID&&!localStorage.getItem('sensi_bin_id_confirmed')){
         sNewBid(bid);
       }
-    }catch(e){console.error(e);}
+      sErrSave('');
+    }catch(e){console.error(e);sErrSave(e.message||'Salvataggio non riuscito');}
     sSyncing(false);
     sLastSync(new Date());
   },[]);
@@ -1686,7 +1684,8 @@ function App(){
         h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0 10px'}},
           h('div',{style:{display:'flex',alignItems:'baseline',gap:'10px'}},
             h('span',{style:{fontFamily:'var(--pf)',fontSize:'20px',fontWeight:'500',color:'var(--ac)'}},'Sensi'),
-            h('span',{onClick:()=>{window.location.href=window.location.pathname+'?v='+Date.now();},style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em',cursor:'pointer'}},`gestione economica ${ANNO} · v${VERS}`)
+            h('span',{onClick:()=>{window.location.href=window.location.pathname+'?v='+Date.now();},style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)',letterSpacing:'0.08em',cursor:'pointer'}},`gestione economica ${ANNO} · v${VERS}`),
+            (()=>{const kb=Math.round(JSON.stringify(data).length/1024),p=kb/LIMITE_KB*100;return h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',letterSpacing:'0.04em',color:p>=90?'var(--neg)':p>=75?'var(--ac)':'var(--txt3)'}},`${kb}/${LIMITE_KB} KB`);})()
           ),
           h('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
             syncing&&h('span',{style:{fontFamily:'var(--mono)',fontSize:'11px',color:'var(--txt3)'}},'Salvataggio…'),
@@ -1702,6 +1701,10 @@ function App(){
     ),
 
     // Banner bin ID (prima volta)
+    errSave&&h('div',{style:{background:'rgba(163,45,45,0.12)',borderBottom:'1px solid var(--neg)',padding:'11px 16px',display:'flex',alignItems:'center',gap:'10px'}},
+      h('span',{style:{fontFamily:'var(--mono)',fontSize:'12px',color:'var(--neg)',flex:1,lineHeight:'1.5'}},'I dati NON sono stati salvati. '+errSave),
+      h('button',{onClick:()=>sErrSave(''),style:{background:'none',border:'none',cursor:'pointer',color:'var(--neg)',fontSize:'17px',flexShrink:0}},'\u00d7')
+    ),
     newBinId&&h('div',{style:{background:'rgba(186,117,23,0.1)',borderBottom:'1px solid var(--ac)',padding:'10px 20px',fontFamily:'var(--mono)',fontSize:'12px',color:'var(--ac)',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}},
       h('span',null,'✓ Bin creato con successo! ID: ',h('strong',null,newBinId)),
       h('span',{style:{color:'var(--txt2)'}},'— Inserisci questo ID nel file HTML (riga JSONBIN_BIN_ID) e rideploya per usare la stessa cartella con Livia.'),
